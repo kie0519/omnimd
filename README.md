@@ -30,7 +30,7 @@ PDF、Office 文档、图片等 38 种格式，统一转换为一份信息完整
 **图：系统架构**
 - 接入网关 → 业务核心：HTTPS，标注「同步调用」
 - 业务核心 → 数据层：PostgreSQL（持久化）与 Redis（缓存）两条连接线
-- 连接线样式区分不明，具体协议标注[?]
+- 连接线样式难以区分，协议无法确定，标注 [?]
 - 各模块下方标注实例数：网关 ×2、核心 ×4、数据层 ×2
 ```
 
@@ -38,8 +38,6 @@ PDF、Office 文档、图片等 38 种格式，统一转换为一份信息完整
 
 ```markdown
 ![图片](https://<存储域名>/<桶名>/<前缀><sha256>.png)
-# 2026 quarterly revenue (10k CNY)
-
 - 图表：2026 年季度营收（单位：万元，10k CNY）
 - 图表类型：柱状图（蓝色柱形）
 - Y 轴：数值，刻度 0–400，间隔 100
@@ -178,7 +176,7 @@ OUTPUT=url,text      # url / text / alt 逗号分隔多选，alt 依赖 url
 
 存储按需配置：产出含图片链接、或以 URL 传图转写时需要；`VLM_IMAGE_INPUT=base64` 且仅要转写文本时可免。
 
-`VLM_THINKING` 控制思考参数的下发方式——OpenAI 兼容生态有多种协议形态，取值与端点适配速查见 [.env.example](https://github.com/kie0519/omnimd/blob/main/.env.example)。两点说明：转写是提取任务，通常关闭思考（`*-off`）以省输出预算，开启（`*-on`）用于复杂图表的质量实验；OpenAI 官方推理模型（o 系 / GPT-5）不接受 `max_tokens`，与本实现不兼容。
+`VLM_THINKING` 控制思考参数的下发方式——OpenAI 兼容生态有多种协议形态，取值与端点适配速查见 [.env.example](https://github.com/kie0519/omnimd/blob/main/.env.example)。两点说明：转写是提取任务，通常关闭思考（`*-off`）以省输出预算，开启（`*-on`）用于复杂图表的质量实验；OpenAI 官方推理模型（o 系 / GPT-5）要求 `max_completion_tokens` 而非 `max_tokens`，与本实现不兼容。
 
 ## 处理管线
 

@@ -8,9 +8,9 @@
 1. 占位符 ``@@IMG:{sha256}@@``——引擎已通过 ``store.register`` 注册
 2. data URI——由 converter 的注册步骤接管
 
-引擎不落盘任何中间产物。支持格式清单声明在引擎注册表
-（engines/__init__.py）——路由知识归路由层；引擎的第三方依赖
-在构造时导入，依赖加载成本跟实际使用走。
+引擎不落盘任何中间产物。支持格式清单只在引擎注册表
+（engines/__init__.py）声明一处，引擎类不重复声明；
+引擎的第三方依赖在构造时导入，依赖加载成本跟实际使用走。
 """
 from abc import ABC, abstractmethod
 from pathlib import Path

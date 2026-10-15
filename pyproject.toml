@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "omnimd"
-version = "1.0.1"
+version = "1.0.2"
 description = "把任意文件转成 LLM 可用的 Markdown——正文、图片公开链接与图片转写文本齐全，图片里的信息同样可看、可检索"
 readme = "README.md"
 license = "MIT"

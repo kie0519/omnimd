@@ -59,7 +59,7 @@ class ImageAsset:
         """图片字节的 base64 data URI 形态（VLM_IMAGE_INPUT=base64 时传给 VLM）。
 
         MIME 统一按 png 声明（与上传侧 {sha256}.png 命名保持一致）——多数
-        端点按字节嗅探实际格式，严格校验 MIME 的端点不受支持。
+        端点按字节嗅探实际格式，严格校验 MIME 的端点不在支持范围。
         """
         encoded = base64.b64encode(self.data).decode()
         return f"data:image/png;base64,{encoded}"

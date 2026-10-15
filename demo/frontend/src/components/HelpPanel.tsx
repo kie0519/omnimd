@@ -101,10 +101,8 @@ export default function HelpPanel({ open, onClose, formats }: Props) {
                   </tr>
                   <tr>
                     <td>VLM 视觉模型</td>
-                    <td>
-                      <code>VLM_BASE_URL</code> 等凭据三项
-                    </td>
-                    <td>图片转写端点——任意 OpenAI 兼容端点直接接入（OpenAI / DeepSeek / 本地 Ollama 等）；<code>VLM_THINKING</code> 选思考控制方式</td>
+                    <td>任意 OpenAI 兼容端点</td>
+                    <td>图片转写端点，凭据三项（<code>VLM_API_KEY</code> / <code>VLM_BASE_URL</code> / <code>VLM_MODEL</code>）直接接入（OpenAI / DeepSeek / 本地 Ollama 等）；<code>VLM_THINKING</code> 选思考控制方式</td>
                   </tr>
                   <tr>
                     <td>文件存储</td>

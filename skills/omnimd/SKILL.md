@@ -18,7 +18,7 @@ description: 文件转 Markdown。当用户要求把 PDF/DOCX/PPTX/XLSX 等任�
      直接接入；`VLM_THINKING` 可选——思考控制方式，不设置即 none）；
    - 存储凭据：`STORAGE_PROVIDER=s3` 填 `S3_*` 系列；
 4. 运行 `python "${CLAUDE_SKILL_DIR}/scripts/run.py" --help` 自检，
-   能打印用法即就绪。
+   能打印用法即安装成功（配置是否齐全在首次转换时校验）。
 
 ## 前置确认（执行命令前确认，未确认先引导完成）
 

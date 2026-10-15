@@ -1,8 +1,8 @@
 # Python 库接口
 
 > **定位**：omnimd 作为 Python 库使用的完整说明——安装、构造、转换、参数与错误处理。命令行用法见根 [README.md](../README.md)，配置项语义见 [.env.example](../.env.example)。
-> **读者**：在自己的项目里集成 omnimd 的开发者
-> **最后更新**：2026-10-11
+> **读者**：人类专家、AI Agent
+> **最后更新**：2026-10-15
 
 ---
 
@@ -39,7 +39,7 @@ result.markdown                  # 完整 Markdown 文本（str）
 md = OmniMD()
 ```
 
-读取的环境变量与命令行完全一致（见 [.env.example](../.env.example)）——同一份配置同时驱动 CLI 与库。注意：导入 omnimd 即会加载当前目录与项目根的 .env 到进程环境（逐个补缺、不覆盖已设值）。最小部署只需 VLM 凭据三项（KEY/URL/MODEL，任意 OpenAI 兼容端点直接接入；`VLM_THINKING` 可选思考控制方式、缺省 none）：配合 `VLM_IMAGE_INPUT=base64`（图片直传视觉模型），`output="text"` 的转换不依赖存储；缺省的 URL 传图模式下存储在产出含图片链接或转写时按需要求。构造参数可覆盖环境值：
+读取的环境变量与命令行完全一致（见 [.env.example](../.env.example)）——同一份配置同时驱动 CLI 与库。注意：导入 omnimd 即会加载当前目录与包所在目录的 .env 到进程环境（逐个补缺、不覆盖已设值）。最小部署只需 VLM 凭据三项（KEY/URL/MODEL，任意 OpenAI 兼容端点直接接入；`VLM_THINKING` 可选思考控制方式、缺省 none）：配合 `VLM_IMAGE_INPUT=base64`（图片直传视觉模型），`output="text"` 的转换不依赖存储；缺省的 URL 传图模式下，产出含图片链接或含转写时才要求存储配置。构造参数可覆盖环境值：
 
 ```python
 md = OmniMD(
@@ -62,7 +62,7 @@ md = OmniMD(
         model="<模型名>",
         max_tokens=8192,         # 可选：单图转写输出上限
         concurrency=8,           # 可选：转写并发数
-        thinking="none",         # 可选：思考控制方式 none/thinking-off|on/template-off|on/effort-off|on/both-off|on
+        thinking="none",         # 可选：思考控制方式（缺省 none，取值表见 .env.example）
     ),
     storage=S3Config(
         endpoint="<S3 端点>",   # 自托管 MinIO / OBS / OSS / COS 通用

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240" role="img" aria-label="omnimd logo">
+  <!-- 品牌基因与 demo 界面一致：深青圆角方块 + 带折角的文档；文档内两行文本、
+       第三行化为向右箭头——「文件内容变成产出」的极简叙事 -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#137171"/>
+      <stop offset="1" stop-color="#0b5656"/>
+    </linearGradient>
+  </defs>
+  <rect x="24" y="24" width="192" height="192" rx="52" fill="url(#bg)"/>
+  <path d="M 100 62 H 128 L 148 82 V 170 Q 148 178 140 178 H 100 Q 92 178 92 170 V 70 Q 92 62 100 62 Z" fill="#ffffff"/>
+  <path d="M 128 62 L 148 82 H 128 Z" fill="#e6f2f2"/>
+  <g stroke="#0f6b6b" stroke-width="7" stroke-linecap="round" fill="none">
+    <path d="M 104 104 H 132"/>
+    <path d="M 104 122 H 122"/>
+  </g>
+  <path d="M 104 148 H 134 M 124 138 L 134 148 L 124 158"
+        fill="none" stroke="#0b5656" stroke-width="7"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

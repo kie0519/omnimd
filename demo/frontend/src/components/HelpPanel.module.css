@@ -1,0 +1,238 @@
+/* 使用指南：右侧抽屉，与历史抽屉同一交互语言（backdrop + 滑入 + Esc 关闭） */
+
+.panel {
+  position: fixed;
+  inset: 0 0 0 auto;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  width: min(420px, 92vw);
+  height: 100%;
+  background: var(--bg);
+  border-left: 1px solid var(--line);
+  transform: translateX(100%);
+  transition: transform var(--dur-2) var(--ease);
+}
+
+.panel.open {
+  transform: translateX(0);
+  box-shadow: var(--shadow-2);
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: var(--overlay);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-2) var(--ease);
+}
+
+.backdropOpen {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--t-b);
+  font-weight: 650;
+}
+
+.closeBtn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-1);
+  color: var(--ink-2);
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+
+.closeBtn:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--s-4);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding-bottom: var(--s-4);
+  margin-bottom: var(--s-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.section:last-child {
+  margin-bottom: 0;
+  padding-bottom: var(--s-2);
+  border-bottom: none;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--t-s);
+  font-weight: 650;
+  color: var(--ink);
+}
+
+/* 步骤流 */
+.flow {
+  margin: 0;
+  padding-left: 1.4em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  font-size: var(--t-s);
+  color: var(--ink-2);
+  line-height: 1.7;
+}
+
+.flow b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.note {
+  margin: 0;
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+  line-height: 1.7;
+}
+
+.note b,
+.note strong {
+  color: var(--ink-2);
+}
+
+.note code,
+.table code {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+/* 状态徽标内联示例（与 StatusBadge 同色语义，用文字级样式保持轻量） */
+.badge {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--t-xs);
+  line-height: 1.8;
+}
+
+/* 连接配置表 */
+.tableWrap {
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  background: var(--surface);
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-xs);
+}
+
+.table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--ink-2);
+  padding: var(--s-1) var(--s-2);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: var(--s-1) var(--s-2);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-2);
+  vertical-align: top;
+  line-height: 1.6;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.table td:first-child {
+  color: var(--ink);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* 限制列表 */
+.list {
+  margin: 0;
+  padding-left: 1.4em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  font-size: var(--t-s);
+  color: var(--ink-2);
+  line-height: 1.7;
+}
+
+/* 格式矩阵（与首访页同一展示逻辑） */
+.formatBoard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  background: var(--surface);
+}
+
+.formatGroup {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: var(--s-2);
+  align-items: baseline;
+}
+
+.formatLabel {
+  font-size: var(--t-xs);
+  font-weight: 650;
+  color: var(--ink-2);
+}
+
+.formatChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+  min-width: 0;
+}
+
+.formatChip {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+  padding: 1px var(--s-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  background: var(--bg);
+  line-height: 1.5;
+}

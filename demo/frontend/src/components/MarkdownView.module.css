@@ -1,0 +1,184 @@
+/* 产出文档排版：标题阶梯 / 表格斑马纹 / 图片占位淡入 / 引用与代码 */
+
+.doc {
+  font-size: var(--t-b);
+  line-height: 1.8;
+  /* 长串（URL / 无空格英文）在必要时断行，不撑破版心；块级文本继承 */
+  overflow-wrap: break-word;
+  animation: fadeIn var(--dur-2) var(--ease);
+}
+
+.doc > :first-child {
+  margin-top: 0;
+}
+
+.doc h1,
+.doc h2,
+.doc h3,
+.doc h4 {
+  line-height: 1.35;
+  margin: 1.6em 0 0.6em;
+  font-weight: 650;
+}
+
+.doc h1 {
+  font-size: var(--t-l);
+}
+
+.doc h2 {
+  font-size: var(--t-m);
+}
+
+.doc h3,
+.doc h4 {
+  font-size: var(--t-b);
+}
+
+.doc p {
+  margin: 0.75em 0;
+}
+
+.doc a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.doc a:hover {
+  border-bottom-color: var(--accent);
+}
+
+.doc ul,
+.doc ol {
+  padding-left: 1.4em;
+  margin: 0.75em 0;
+}
+
+.doc li {
+  margin: 0.3em 0;
+}
+
+.doc blockquote {
+  margin: 1em 0;
+  padding: 0.2em 0 0.2em var(--s-3);
+  border-left: 3px solid var(--line-strong);
+  color: var(--ink-2);
+}
+
+.doc code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.doc pre {
+  /* 代码块软折行：保留缩进换行、超长行折行，不出现横向滚动条 */
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  padding: var(--s-3);
+  border-radius: var(--r-1);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.doc pre code {
+  background: none;
+  padding: 0;
+}
+
+.doc hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: var(--s-4) 0;
+}
+
+/* GFM 表格：斑马纹 + 细线；宽表整体横向滚动（滚动条不出现在页面级） */
+.tableWrap {
+  overflow-x: auto;
+  margin: 1em 0;
+}
+
+.doc table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-s);
+}
+
+.doc th,
+.doc td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.doc th {
+  font-weight: 600;
+  color: var(--ink-2);
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.doc tbody tr:nth-child(even) {
+  background: var(--surface-2);
+}
+
+/* 图片：块级占位底色 + 加载完成淡入；点开原图 */
+.imgWrap {
+  display: block;
+  margin: 1em 0;
+}
+
+.imgWrap a {
+  display: block;
+  border-bottom: none;
+}
+
+.imgWrap img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--r-1);
+  background: var(--surface-2);
+  animation: fadeIn var(--dur-1) var(--ease);
+}
+
+/* 代码块外壳：相对定位承载复制按钮 */
+.pre {
+  position: relative;
+}
+
+.codeCopy {
+  position: absolute;
+  top: var(--s-1);
+  right: var(--s-1);
+  padding: 2px var(--s-2);
+  border-radius: var(--r-1);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease), color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease);
+}
+
+.pre:hover .codeCopy,
+.codeCopy:focus-visible {
+  opacity: 1;
+}
+
+.codeCopy:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

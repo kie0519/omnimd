@@ -1,0 +1,19 @@
+.banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  padding: 8px var(--s-3);
+  text-align: center;
+  font-size: var(--t-s);
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-bottom: 1px solid var(--warn);
+  transform: translateY(-100%);
+  transition: transform var(--dur-2) var(--ease);
+}
+
+.show {
+  transform: translateY(0);
+}

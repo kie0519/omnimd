@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+demo/data/
+demo/logs/
+demo/frontend/node_modules/
+demo/frontend/dist/

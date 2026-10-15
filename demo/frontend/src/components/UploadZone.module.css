@@ -1,0 +1,412 @@
+/* 首访主舞台：价值主张 + 上传热区 + 左右分区（流程内容 | 产出组成） */
+
+/* 主舞台比结果视图宽：左右分区需要横向空间（720px 是文档阅读宽度，
+   约束的是结果内容区，不是这个操作面板）。
+   一屏构造：wrap 填满 .work 高度，内容不足时垂直居中，上传热区弹性
+   伸缩吸收剩余空间——布局连续适配任意视口高度，不靠断点切换 */
+.wrap {
+  max-width: 860px;
+  margin-inline: auto;
+  width: 100%;
+  min-height: 100%;
+  padding: var(--s-4);
+  padding-block: var(--s-4);
+  padding-block: clamp(var(--s-3), 4dvh, var(--s-6));
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--s-4);
+  gap: clamp(var(--s-3), 2.5dvh, var(--s-5));
+}
+
+/* ── 价值主张 ── */
+
+.pitch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  text-align: center;
+}
+
+.pitchTitle {
+  margin: 0;
+  font-size: var(--t-l);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.pitchSub {
+  margin: 0;
+  font-size: var(--t-b);
+  color: var(--ink-2);
+  line-height: 1.7;
+}
+
+/* ── 上传热区 ── */
+
+/* 上传热区是空态的唯一主体：弹性伸缩（高视口舒展、矮视口收缩），
+   只在极端小窗触底——此时 .work 的滚动安全网兜住 */
+.zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 220px;
+  min-height: clamp(180px, 30dvh, 300px);
+  max-height: 340px;
+  padding: var(--s-5);
+  border: 2px dashed var(--line-strong);
+  border-radius: var(--r-2);
+  color: var(--ink-2);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  transition: border-color var(--dur-1) var(--ease),
+    background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease),
+    box-shadow var(--dur-1) var(--ease);
+}
+
+.zone:hover:not([aria-disabled="true"]) {
+  border-color: var(--ink-3);
+}
+
+/* 提交锁定态：hover 反馈关闭，光标不诱导点击 */
+.zoneBusy {
+  cursor: default;
+}
+
+.dragOver {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  transform: scale(1.01);
+  box-shadow: var(--shadow-2);
+}
+
+/* 拖入时图标上浮一格，暗示「放进来」 */
+.dragOver .zoneIcon {
+  transform: translateY(-3px);
+  color: var(--accent);
+}
+
+.zoneIcon {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  transition: transform var(--dur-2) var(--ease), color var(--dur-1) var(--ease),
+    background var(--dur-1) var(--ease);
+}
+
+.zoneTitle {
+  font-size: var(--t-m);
+  color: var(--ink);
+  text-align: center;
+  word-break: break-all;
+}
+
+.zoneHint {
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+
+.error {
+  padding: var(--s-2) var(--s-3);
+  border-left: 3px solid var(--err);
+  border-radius: var(--r-1);
+  background: var(--surface);
+  color: var(--err);
+  font-size: var(--t-s);
+  /* 批量预检的拒绝清单逐行展示（\n 换行），长文件名允许断行 */
+  white-space: pre-line;
+  word-break: break-all;
+}
+
+/* ── 主舞台分区：左列认识产品，右列动手配置 ── */
+
+.stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 264px;
+  grid-template-areas:
+    "steps options"
+    "formats options";
+  gap: var(--s-4);
+  align-items: start;
+}
+
+/* 窄屏单列：流程 → 配置 → 格式（配置紧邻上传动作） */
+@media (max-width: 859px) {
+  .stage {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "steps"
+      "options"
+      "formats";
+  }
+}
+
+/* ── 产出组成（上传时选定的唯一运行参数） ── */
+
+.options {
+  grid-area: options;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  background: var(--surface);
+}
+
+.optionsTitle {
+  margin: 0;
+  font-size: var(--t-xs);
+  font-weight: 650;
+  color: var(--ink-2);
+  letter-spacing: 0.02em;
+}
+
+.partBtns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.partBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-1);
+  background: var(--surface);
+  font-size: var(--t-s);
+  color: var(--ink-2);
+  transition: border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+
+.partBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.partBtnOn {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.partDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink-3);
+  flex: none;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+
+.partBtnOn .partDot {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* 当前选择下图片块形态的实时预览 */
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.previewLabel {
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+
+.previewBody {
+  margin: 0;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-1);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  line-height: 1.7;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.optionsHint {
+  margin: 0;
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+
+/* ── 三步流程线 ── */
+
+.steps {
+  grid-area: steps;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: stretch;
+  gap: var(--s-2);
+}
+
+.step {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  gap: var(--s-2);
+}
+
+.stepArrow {
+  align-self: center;
+  color: var(--ink-3);
+  font-size: var(--t-b);
+  flex: none;
+}
+
+.stepCard {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--s-1);
+  padding: var(--s-3) var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  background: var(--surface);
+}
+
+.stepIcon {
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  margin-bottom: var(--s-1);
+}
+
+.stepTitle {
+  font-size: var(--t-s);
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.stepDesc {
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+
+/* 窄屏：流程线竖排，箭头旋转朝下 */
+@media (max-width: 639px) {
+  .steps {
+    flex-direction: column;
+  }
+
+  .stepArrow {
+    transform: rotate(90deg);
+    align-self: center;
+  }
+}
+
+/* ── 格式矩阵 ── */
+
+.formatBoard {
+  grid-area: formats;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  background: var(--surface);
+}
+
+.formatGroup {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: var(--s-2);
+  align-items: baseline;
+}
+
+.formatLabel {
+  font-size: var(--t-xs);
+  font-weight: 650;
+  color: var(--ink-2);
+}
+
+.formatChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+  min-width: 0;
+}
+
+.formatChip {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+  padding: 1px var(--s-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  background: var(--bg);
+  line-height: 1.5;
+}
+
+/* ── 短视口压缩档：配角让位，一屏保完整 ──
+   价值主张标题、上传热区、产出组成不动；让位顺序为说明文字与内边距。
+   更极端的小窗由 .work 的滚动安全网兜底（滚动而非截断） */
+@media (max-height: 760px) {
+  .stepDesc {
+    display: none;
+  }
+
+  .stepCard {
+    padding: var(--s-2) var(--s-1);
+  }
+
+  .stepIcon {
+    margin-bottom: 0;
+  }
+
+  .zoneIcon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .stage {
+    gap: var(--s-3);
+  }
+
+  .options,
+  .formatBoard {
+    padding: var(--s-3);
+  }
+
+  .previewBody {
+    padding: var(--s-1) var(--s-2);
+  }
+}
+
+/* 更矮视口（小尺寸笔记本）：副标题让位，热区下限再收 */
+@media (max-height: 660px) {
+  .pitchSub {
+    display: none;
+  }
+
+  .zone {
+    min-height: 160px;
+  }
+}

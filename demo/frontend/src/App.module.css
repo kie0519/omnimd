@@ -1,0 +1,89 @@
+/* 应用骨架：左栏列表 + 右栏内容；<900px 左栏退化为抽屉（见 Sidebar.module.css） */
+
+.shell {
+  display: flex;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.work {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* 滚动安全网：内容超出视口时滚动，不静默裁切（结果视图自管滚动，不受影响） */
+  overflow-y: auto;
+}
+
+/* 窄屏顶栏：承载抽屉入口、品牌标与帮助按钮，宽屏隐藏 */
+.topbar {
+  display: none;
+}
+
+@media (max-width: 899px) {
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    flex: none;
+    height: 48px;
+    padding: 0 var(--s-2) 0 var(--s-1);
+    border-bottom: 1px solid var(--line);
+    background: var(--bg);
+  }
+
+  .menuBtn {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--r-1);
+    color: var(--ink);
+    transition: background var(--dur-1) var(--ease);
+  }
+
+  .menuBtn:hover {
+    background: var(--surface);
+  }
+
+  .topMark {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--r-1);
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+
+  .topTitle {
+    font-size: var(--t-s);
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+
+  /* 使用指南图标按钮：与抽屉入口对称，压住顶栏右缘 */
+  .topHelpBtn {
+    margin-left: auto;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--r-1);
+    color: var(--ink);
+    transition: background var(--dur-1) var(--ease);
+  }
+
+  .topHelpBtn:hover {
+    background: var(--surface);
+  }
+}

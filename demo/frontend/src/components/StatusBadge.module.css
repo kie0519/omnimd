@@ -1,0 +1,89 @@
+/* 四态徽标：色彩只用于状态语义，不做装饰 */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--t-xs);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.pending {
+  color: var(--ink-3);
+}
+
+.running {
+  color: var(--accent);
+}
+
+.running .dot {
+  animation: pulse 2s var(--ease) infinite;
+}
+
+.done {
+  color: var(--ok);
+}
+
+.done .dot {
+  border-radius: 2px;
+  /* 对勾用勾形替代圆点 */
+  background: none;
+  position: relative;
+}
+
+.done .dot::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: 2px;
+  width: 6px;
+  height: 3px;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.failed {
+  color: var(--err);
+}
+
+.failed .dot {
+  border-radius: 2px;
+  background: none;
+  position: relative;
+}
+
+.failed .dot::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  width: 6px;
+  height: 6px;
+  /* 叉形用两笔描线替代字符，与对勾同一构造方式 */
+  background:
+    linear-gradient(currentColor, currentColor) center / 100% 1.4px no-repeat,
+    linear-gradient(currentColor, currentColor) center / 1.4px 100% no-repeat;
+  transform: rotate(45deg);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+}

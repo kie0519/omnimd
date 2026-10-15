@@ -1,0 +1,121 @@
+/* 设计令牌：全站唯一定义点。组件一律引用令牌，禁用魔法值。 */
+
+:root {
+  /* ── 色彩：暖纸底 + 墨色文字 + 单一深青强调 ── */
+  --bg: #faf9f7;          /* 页面底：暖白纸感 */
+  --surface: #ffffff;     /* 卡片/列表项底 */
+  --surface-2: #f4f2ee;   /* 左栏底：次级纸面 */
+  --ink: #1a1d21;         /* 主文字：近黑墨色 */
+  --ink-2: #5c6470;       /* 次级文字 */
+  --ink-3: #9aa1ab;       /* 弱化文字（时间戳/占位/禁用） */
+  --line: #e8e6e1;        /* 分隔线：暖灰 */
+  --line-strong: #d5d2cb; /* 强分隔（标题条底线/上传区虚线） */
+  --accent: #0f6b6b;      /* 唯一强调色：深青（交互/进行中） */
+  --accent-soft: #e6f2f2; /* 强调底（选中态/聚焦光晕） */
+  --ok: #2e7d43;          /* 成功 */
+  --err: #b3372f;         /* 失败 */
+  --warn: #9a6b15;        /* 警示（离线横幅） */
+  --warn-soft: #f7efdd;   /* 警示底 */
+  --on-accent: #ffffff;   /* 强调底上的文字色 */
+  --accent-strong: #0b5656; /* 强调 hover 加深 */
+  --overlay: rgb(26 29 33 / .48); /* 抽屉/弹层遮罩 */
+
+  /* ── 字号阶梯（1.25 major third）── */
+  --t-xs: 12px;
+  --t-s: 13.5px;
+  --t-b: 15px;
+  --t-m: 19px;
+  --t-l: 26px;
+
+  /* ── 间距（8pt 网格）── */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 16px;
+  --s-4: 24px;
+  --s-5: 40px;
+  --s-6: 64px;
+
+  /* ── 圆角 / 阴影 / 动效 ── */
+  --r-1: 6px;
+  --r-2: 10px;
+  --shadow-1: 0 1px 2px rgb(26 29 33 / 0.05), 0 4px 16px rgb(26 29 33 / 0.06);
+  --shadow-2: 0 2px 4px rgb(26 29 33 / 0.06), 0 12px 32px rgb(26 29 33 / 0.1);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1); /* easeOutQuint：全站唯一动效曲线 */
+  --dur-1: 140ms;
+  --dur-2: 240ms;
+
+  --font-sans: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+/* ── 全局基础 ── */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--t-b);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* 焦点环：全局统一，永不隐藏 */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+/* 数字防抖动 */
+.numeric {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+/* 滚动条：细、融入纸面 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 动效降级 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

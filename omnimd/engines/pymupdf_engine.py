@@ -5,8 +5,10 @@ data URI 内嵌在 Markdown 里——不产生本地文件路径，源文件名�
 特殊字符（全角括号等）不影响产出。这是图片保真的唯一 PDF 路线
 （候选引擎的 PDF 转换都丢全部内嵌图片）。
 
-layout 模式（pymupdf.layout 子进程管线）在 Windows 上子进程输出 GBK
-编码导致解码失败，扫描版 PDF（整页图片、无文字层）产出为空——
+layout 模式（pymupdf.layout 子进程管线）不可用，两个原因：
+- Windows 上子进程输出 GBK 编码导致解码失败
+- 扫描版 PDF（整页图片、无文字层）在该模式下产出为空
+
 全局固定 legacy 管线（pymupdf_rag）。
 """
 import re

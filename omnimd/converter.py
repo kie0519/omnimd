@@ -300,8 +300,8 @@ class Converter:
                     logger.info("[%d/%d] 图片处理完成: %s", done, len(assets), asset.sha256[:12])
                 except Exception:
                     logger.exception("图片处理失败: sha=%s", asset.sha256[:12])
-                    # 空内容与异常同走此路，不做重试：思考链已消耗本次输出
-                    # 预算，重试大概率得到同样结果（模型选型时已排除稳定性差的端点）
+                    # 空内容与异常同走此路，不做重试：思考链已消耗本次输出预算，
+                    # 重试大概率得到同样结果
                     # 只清理失败子任务：另一子任务已成功（含缓存命中）的结果不覆盖
                     if need_text and not asset.ocr_text:
                         asset.ocr_text = "（图片转写失败）"

@@ -1,8 +1,8 @@
 # 架构设计
 
 > **定位**：omnimd 的技术架构——处理管线、抽象层、缓存体系、代码地图。每项关键设计的理由在正文直接给出。
-> **读者**：维护者、AI Agent
-> **最后更新**：2026-10-11
+> **读者**：人类专家、AI Agent
+> **最后更新**：2026-10-15
 
 ---
 
@@ -18,7 +18,7 @@
   │         ↓ 正文 Markdown（图片以占位符 / data URI 内嵌，引擎不落盘）
   ② 注册：短边<60px 丢弃 → SHA-256 去重 → 替换为占位符 @@IMG:{sha256}@@
   │         ↓
-  ③ 处理（两段并发：先全部上传、后全部转写）「URL 缓存命中？→ 上传 ｜ 转写缓存命中？→ VLM 转写 → 写缓存」
+  ③ 处理（两段并发：先全部上传、后全部转写）「缓存未命中 → 上传 / VLM 转写，成功 → 写缓存；命中则跳过对应调用」
   │         ↓（不含 text/alt 时止步于上传，不调 VLM；base64 传输且不含 url 时不上传——VLM 直收图片数据）
   ④ 渲染：占位符 → ![alt 文本](url)（含 alt 时描述进链接位，含 text 时再跟转写文本块），压缩连续空行 → 覆盖写入输出目录
 ```
@@ -75,9 +75,9 @@
 
 ### 2.4 配置层
 
-[config.py](../omnimd/config.py) 的 `load()` 从 .env / 环境变量构造不可变 `Config`，加载即校验。校验按知识归属分层：
+[config.py](../omnimd/config.py) 的 `load()` 从 .env / 环境变量构造不可变 `Config`，加载即校验。校验分两层：
 
-- config 校验自己拥有的知识：必填凭据（VLM KEY/URL/MODEL 三项）是否齐全、运行参数（`OUTPUT` / `DOC_ENGINE` / `VLM_IMAGE_INPUT` / `VLM_THINKING`）取值是否合法——合法取值从各层注册表导入（`parse_output` 内置取值表、`DOC_ENGINES` 来自 engines、`THINKING_EXTRA_BODY` 来自 vlm/thinking.py），不在文档另抄一份
+- config 校验通用项：必填凭据（VLM KEY/URL/MODEL 三项）是否齐全、运行参数（`OUTPUT` / `DOC_ENGINE` / `VLM_IMAGE_INPUT` / `VLM_THINKING`）取值是否合法——合法取值从各层注册表导入（`parse_output` 内置取值表、`DOC_ENGINES` 来自 engines、`THINKING_EXTRA_BODY` 来自 vlm/thinking.py），不在文档另抄一份
 - 存储按需必填：产出含图片链接、或 URL 传图模式下的视觉任务需要上传时，在 `Converter.uploader` 惰性构造并校验（`STORAGE_PROVIDER` 是否支持、该后端声明的 `REQUIRED_ENV_VARS` 是否齐全），缺配置给出带指引的报错
 
 CLI 只覆盖运行参数（产出组成/并发/缓存目录），不提供端点切换——凭据三项（key/url/model）随端点整体更换，避免新旧配置混用。

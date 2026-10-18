@@ -154,7 +154,7 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [refreshList]);
 
-  // 列表轮询：活跃 2s / 静默 5s（搜索进行中保持 2s，不为演示而空耗请求）
+  // 列表轮询：活跃 2s / 静默 5s（活跃与搜索中保持 2s 保证结果及时，静默降频省请求）
   const hasActive = tasks.some(
     (t) => t.status === "pending" || t.status === "running"
   );

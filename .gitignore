@@ -1,7 +1,42 @@
+# 密钥与环境配置
 .env
+
+# Python 字节码与打包产物
 __pycache__/
-*.pyc
-demo/data/
-demo/logs/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# 测试与工具缓存
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 虚拟环境
+.venv/
+venv/
+
+# 前端依赖与构建产物
 demo/frontend/node_modules/
 demo/frontend/dist/
+
+# demo 运行数据
+demo/data/
+demo/logs/
+
+# 发布导出与本地测试产物
+.publish/
+.pytest-tmp/
+.venv-test/
+.tmp/
+
+# Claude Code 本地目录
+.claude/
+
+# IDE 与操作系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

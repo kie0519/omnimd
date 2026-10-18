@@ -56,13 +56,9 @@
   }
 
   .topMark {
-    display: grid;
-    place-items: center;
-    width: 26px;
-    height: 26px;
-    border-radius: var(--r-1);
-    background: var(--accent);
-    color: var(--on-accent);
+    display: block;
+    width: 20px;
+    height: 20px;
   }
 
   .topTitle {
@@ -86,4 +82,39 @@
   .topHelpBtn:hover {
     background: var(--surface);
   }
+}
+
+/* 上传被拒提示条：服务端拒绝的文件必须有可见反馈（不允许悄悄消失） */
+.uploadErrors {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 auto var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  max-width: 860px;
+  border-left: 3px solid var(--err);
+  border-radius: var(--r-1);
+  background: var(--surface);
+  color: var(--err);
+  font-size: var(--t-s);
+}
+
+.uploadErrorItem {
+  word-break: break-all;
+}
+
+.uploadErrorDismiss {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 2px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-1);
+  background: var(--surface);
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+}
+
+.uploadErrorDismiss:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }

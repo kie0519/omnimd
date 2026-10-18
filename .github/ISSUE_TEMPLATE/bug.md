@@ -16,4 +16,4 @@ labels: ["bug"]
 
 **相关配置（脱敏后贴出，密钥一律不贴）**
 
-OUTPUT / DOC_ENGINE / VLM_IMAGE_INPUT / VLM_THINKING 中与问题相关的项
+OUTPUT / DOC_ENGINE / VLM_THINKING 中与问题相关的项

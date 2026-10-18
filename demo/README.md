@@ -6,7 +6,7 @@
 ## 前置条件
 
 - Python ≥ 3.10，已安装 omnimd（`pip install omnimd`；参与开发则仓库根执行 `pip install -e .`）
-- `.env`（项目根）已配置 VLM / 存储凭据——转换依赖真实服务
+- `.env`（项目根）按产出组成配置：纯解析无需任何凭据；转写/描述需 VLM 凭据，图片链接需存储配置（首次此类转换时校验）
 - Node.js ≥ 18（仅开发/构建前端需要）
 
 ## 运行
@@ -14,19 +14,18 @@
 **方式一：启动脚本（推荐，在仓库根执行）**
 
 ```bash
-./start.sh                   # start：按需构建前端 → 单进程启动，访问 http://127.0.0.1:8300
+./start.sh                   # 以当前代码运行：未运行则启动，已运行则重启（按需构建前端）
+./start.sh stop              # 停止服务（已停止则无事发生）
 ./start.sh status            # 查看运行状态与健康检查
-./start.sh restart           # 重启（自动替换旧进程）
-./start.sh stop              # 停止
-./start.sh dev               # 开发模式：后端 --reload + Vite 5173（/api 代理）
 ./start.sh logs              # 跟随后端日志
 ```
 
-脚本位于仓库根；Linux / macOS / Windows Git Bash 均可运行。自带环境预检
-（Python / 后端依赖 / omnimd 库）、前端依赖按需安装（`node_modules` 缺失或
-`package-lock.json` 变更时才 `npm install`）、增量构建（源码未变跳过
-`npm run build`）、启动后健康检查把关、孤儿进程兜底清理。可用 `PORT=8302` /
-`HOST=0.0.0.0` / `PYTHON=python3` 环境变量覆盖缺省值。
+重复执行同一条命令是安全的：`start` 在服务已运行时自动重启，`stop` 在服务
+已停止时直接成功。脚本位于仓库根；本地与服务器、Linux / macOS /
+Windows Git Bash 均可运行。启动前做环境预检（Python / 后端依赖 /
+omnimd 库，缺失时给出修复命令），前端依赖与构建按需执行（日常启动零开销），
+启动后经健康检查确认就绪，异常退出的残留进程自动清理。可用 `PORT=8302` /
+`APP_HOST=0.0.0.0` / `PYTHON=python3` 环境变量覆盖缺省值。
 
 **方式二：手动**
 
@@ -43,13 +42,13 @@ cd demo/backend && python -m uvicorn main:app --port 8300
 
 打开 <http://localhost:8300>。
 
-开发模式（可选）：`./start.sh dev`，或手动 `cd demo/frontend && npm run dev`
-后访问 5173 端口，`/api` 已代理到 8300；后端 CORS 已放行该来源。
-
 ## 接口行为
 
-- `POST /api/tasks`：202 创建；不支持扩展名 400（附完整支持列表）；
-  空文件 400；超 50MB 400；并发占满（running+pending ≥ 3）429
+- `POST /api/tasks`：202 创建；`output` Form 字段为产出组成（五部件
+  规范序 CSV，缺省 `body` 纯解析），非法取值 / url 与 base64 同选 /
+  ocr·alt 缺呈现部件均 400（附完整可选取值）；不支持扩展名 400
+  （附完整支持列表）；空文件 400；超 50MB 400；并发占满
+  （running+pending ≥ 3）429
 - `GET /api/health`：`{"status": "ok"}`——纯探活，给部署检查与前端
   离线检测反复调用
 - `GET /api/formats`：`{"formats": [...]}`——支持格式（能力数据），

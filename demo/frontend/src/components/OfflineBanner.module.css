@@ -1,8 +1,8 @@
+/* 离线横幅：粘性置顶推挤布局（不覆盖操作入口——离线时恰恰最需要
+   菜单/历史按钮可用），恢复在线自动收回 */
 .banner {
-  position: fixed;
+  position: sticky;
   top: 0;
-  left: 0;
-  right: 0;
   z-index: 60;
   padding: 8px var(--s-3);
   text-align: center;
@@ -10,10 +10,16 @@
   color: var(--warn);
   background: var(--warn-soft);
   border-bottom: 1px solid var(--warn);
-  transform: translateY(-100%);
-  transition: transform var(--dur-2) var(--ease);
+  max-height: 0;
+  overflow: hidden;
+  padding-block: 0;
+  border-block-end-width: 0;
+  transition: max-height var(--dur-2) var(--ease),
+    padding var(--dur-2) var(--ease);
 }
 
 .show {
-  transform: translateY(0);
+  max-height: 60px;
+  padding-block: 8px;
+  border-block-end-width: 1px;
 }

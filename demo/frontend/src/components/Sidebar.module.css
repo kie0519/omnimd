@@ -23,13 +23,9 @@
 
 .mark {
   grid-area: mark;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--r-1);
-  background: var(--accent);
-  color: var(--on-accent);
+  display: block;
+  width: 26px;
+  height: 26px;
 }
 
 .wordmark {
@@ -68,6 +64,11 @@
 .searchWrap {
   position: relative;
   padding: 0 var(--s-3) var(--s-2);
+}
+
+.search::-webkit-search-cancel-button,
+.search::-webkit-search-decoration {
+  display: none;
 }
 
 .search {

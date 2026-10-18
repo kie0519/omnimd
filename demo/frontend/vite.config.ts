@@ -1,10 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+// 服务形态单一：构建产物由后端托管（start.sh），无 dev server 配置
 export default defineConfig({
   plugins: [react()],
-  server: {
-    // 后端端口与 start.sh 的 PORT 覆盖约定一致（缺省 8300）
-    proxy: { "/api": `http://127.0.0.1:${process.env.PORT ?? 8300}` },
-  },
 });

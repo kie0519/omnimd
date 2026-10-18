@@ -3,8 +3,7 @@ from abc import ABC, abstractmethod
 
 
 class VlmClient(ABC):
-    """以图片引用传入（公开 URL 或 base64 data URI，按 VLM_IMAGE_INPUT 而定），
-    返回该视觉任务的文本产物"""
+    """以图片引用传入（公开 URL 或 base64 data URI），返回该视觉任务的文本产物"""
 
     @abstractmethod
     def ocr(self, image_ref: str) -> str:

@@ -1,13 +1,15 @@
 import { useEffect, useRef } from "react";
 import type { TaskSummary } from "../types";
 import TaskItem from "./TaskItem";
-import { IcHelp, IcLogo, IcX } from "./Icons";
+import { IcHelp, IcX } from "./Icons";
 import s from "./Sidebar.module.css";
 
 interface Props {
   tasks: TaskSummary[];
   /** 搜索命中的真实总数（可能大于列表展示的 50 条） */
   total: number;
+  /** 首次列表拉取是否完成：未完成时不显示空态（避免「记录丢了」误读闪现） */
+  loaded: boolean;
   selectedId: string | null;
   /** 受控搜索文本（防抖由上层处理），空串表示无过滤 */
   value: string;
@@ -37,6 +39,7 @@ function groupOf(createdAt: string): string {
 
 export default function Sidebar({
   tasks,
+  loaded,
   selectedId,
   value,
   onValueChange,
@@ -92,9 +95,9 @@ export default function Sidebar({
       />
       <aside ref={sidebarRef} className={`${s.sidebar} ${open ? s.open : ""}`} aria-label="历史记录">
         <div className={s.brand}>
-          <span className={s.mark} aria-hidden="true">
-            <IcLogo size={20} />
-          </span>
+          {/* 产品 LOGO（public/logo.svg，与浏览器图标同源）；装饰图——
+              品牌名由相邻 wordmark 文本提供 */}
+          <img className={s.mark} src="/logo.svg" width={26} height={26} alt="" aria-hidden="true" />
           <span className={s.wordmark}>omnimd</span>
           <span className={s.tagline}>任意文件 → Markdown</span>
           <button
@@ -135,7 +138,7 @@ export default function Sidebar({
         </div>
 
         <div className={s.list}>
-          {tasks.length === 0 && (
+          {tasks.length === 0 && loaded && (
             <div className={s.empty}>
               <p className={s.emptyTitle}>
                 {value ? `没有匹配「${value}」的记录` : "还没有转换记录"}

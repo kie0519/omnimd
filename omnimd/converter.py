@@ -1,12 +1,16 @@
-"""转换器：将各类文件转换为「正文 + 图片链接 + 图片转写文本」三合一的 Markdown
+"""转换器：将各类文件转换为 Markdown（正文锚点 + 图片部件按需组合）
 
 四步管线（每步职责单一）：
 1. 解析——按扩展名路由到解析引擎（pdf 固定 pymupdf4llm；其余按 DOC_ENGINE 配置，
    缺省 markitdown，不支持的格式回退另一引擎）
 2. 注册——图片统一注册到资产库：装饰图过滤、SHA-256 去重、占位符替换
 3. 处理——并发上传 + VLM 转写（双层缓存，重跑不产生模型调用；产出不含
-   转写与描述时止步于上传；base64 传图时视觉任务直接接收图片数据、跳过上传）
-4. 渲染——占位符按产出组成（url=链接 / text=转写文本 / alt=描述文本）回填为图片块
+   ocr/alt 时止步于上传；纯解析时本步整体跳过）
+4. 渲染——占位符按产出组成（url=链接 / base64=内嵌 / ocr=转写文本 /
+   alt=描述文本）回填为图片块；纯解析时图片块移除
+
+VLM 取图方式由产出组成推导（无配置项）：含 url 部件传公开 URL（图片
+已上传），否则传 base64（字节本地持有，天然兼容本地端点）。
 
 并发模型：实例跨调用共享的只有不可变配置、存储客户端与（惰性构造的）
 视觉模型客户端——三者皆线程安全（惰性构造在首次并发调用时可能重复执行，
@@ -14,9 +18,9 @@
 转换滞留内存），解析引擎按线程隔离复用（第三方引擎的线程安全性不受
 本工具控制）。同一实例可安全并发调用 convert。
 
-产出组成是每次 convert 的参数（缺省取配置的 OUTPUT）：同一个转换器
-实例可产出任意组成的 Markdown，视觉模型客户端惰性构造——首次遇到
-含转写文本的转换才加载 openai SDK。
+产出组成是每次 convert 的参数（缺省取配置的 OUTPUT，body 纯解析）：
+同一个转换器实例可产出任意组成的 Markdown，视觉模型客户端惰性构造——
+首次遇到含 ocr/alt 的转换才加载 openai SDK。
 """
 import base64
 import logging
@@ -37,12 +41,9 @@ logger = logging.getLogger(__name__)
 # data URI 图片（pymupdf4llm embed_images / markitdown keep_data_uris 输出）
 _DATA_URI_PATTERN = re.compile(r'!\[([^\]]*)\]\(data:image/([^;]+);base64,([^)]+)\)')
 
-# 图片块模板：URL 行（alt 是链接的描述文本）+ 可选的转写文本块
+# 图片引用行模板（alt=描述文本，url=公开链接或 data URI）；
+# 转写文本块由渲染代码按产出组成追加
 _URL_BLOCK_TEMPLATE = """![{alt}]({url})"""
-
-# 仅转写文本块模板：内容可检索，不保留链接
-_TEXT_ONLY_TEMPLATE = """{ocr_text}
-"""
 
 
 @dataclass(frozen=True)
@@ -56,8 +57,8 @@ class ImageInfo:
 
     sha256: str          # 内容哈希（同图去重的标识）
     url: str = ""        # 对象存储公开链接（未上传或上传失败时为空）
-    alt_text: str = ""   # 链接描述文本（产出组成含 alt 时填充）
-    ocr_text: str = ""   # 完整转写（产出组成含 text 时填充）
+    alt_text: str = ""   # 链接描述文本（产出组成含 alt 时填充；生成失败为空，渲染回退「图片」）
+    ocr_text: str = ""   # 完整转写（产出组成含 ocr 时填充；转写失败为「（图片转写失败）」标记串）
 
 
 @dataclass(frozen=True)
@@ -70,7 +71,7 @@ class ConversionResult:
 
     markdown: str             # 完整 Markdown 文本
     images: list[ImageInfo]   # 图片清单（元数据，与产出中的图片块一一对应）
-    image_count: int          # 产出中的图片块数（链接或转写形态均计数）
+    image_count: int          # 产出中的图片块数（链接或内嵌形态均计数；纯解析为 0）
     char_count: int           # 产出字符数
     elapsed_ms: int           # 转换耗时（毫秒）
 
@@ -93,37 +94,42 @@ def register_images(markdown: str, store: ImageAssetStore) -> str:
 # ========== 第四步：渲染图片块，模块级纯函数 ==========
 def render_blocks(
     markdown: str, store: ImageAssetStore, parts: set[str]
-) -> tuple[str, int]:
-    """把 sha256 占位符按产出组成渲染为图片块，返回 (markdown, 图片块数)。
+) -> tuple[str, list[ImageAsset]]:
+    """把 sha256 占位符按产出组成渲染为图片块，返回 (markdown, 渲染块清单)。
 
-    parts 是 {url, text, alt} 的非空子集（alt 依赖 url 已在 parse 处校验）；
-    alt 为空时回退「图片」。URL 部件要求链接——该图上传失败（无 URL）
-    时丢弃；仅转写/描述形态不依赖 URL（base64 直传且不含 url 时全程不上传）。
+    parts 是 {body, url, base64, ocr, alt} 的组合（body 锚点；url 与
+    base64 互斥、ocr/alt 依赖其一，已在 parse 处校验）。alt 为空时回退
+    「图片」。纯解析（仅 body）时图片块移除；url 部件要求链接——该图
+    上传失败（无 URL）时丢弃；base64 部件用本地字节渲染 data URI。
     未知占位符替换为空串；装饰图丢弃后的连续空行统一压缩为单个空行。
+    返回的清单与产出中的图片块一一对应（ConversionResult.images 的来源）。
     """
-    count = 0
+    rendered: list[ImageAsset] = []
 
     def render(match: re.Match) -> str:
-        nonlocal count
         sha = match.group(1)
         asset = store.lookup(sha)
         if asset is None:
             return ""
-        if "url" in parts and not asset.url:
+        has_url = "url" in parts
+        has_base64 = "base64" in parts
+        # 无呈现部件（纯解析）或 url 部件但上传失败：图片块移除
+        if (not has_url and not has_base64) or (has_url and not asset.url):
             return ""
-        count += 1
+        rendered.append(asset)
         ocr_text = asset.ocr_text or "（图片转写失败）"
-        if "url" not in parts:
-            return _TEXT_ONLY_TEMPLATE.format(ocr_text=ocr_text)
-        block = _URL_BLOCK_TEMPLATE.format(alt=asset.alt_text or "图片", url=asset.url)
-        if "text" in parts:
+        ref = asset.url if has_url else asset.data_uri()
+        block = _URL_BLOCK_TEMPLATE.format(
+            alt=asset.alt_text or "图片", url=ref
+        )
+        if "ocr" in parts:
             block += f"\n{ocr_text}\n"
         return block
 
     markdown = re.sub(r"@@IMG:([0-9a-f]{64})@@", render, markdown)
     # 丢弃的装饰图与占位替换会留下连续空行，压缩为单个空行；
     # 围栏代码块整体跳过——代码内容逐字保留，不做改写
-    return _collapse_blank_lines(markdown), count
+    return _collapse_blank_lines(markdown), rendered
 
 
 def _collapse_blank_lines(markdown: str) -> str:
@@ -165,18 +171,20 @@ class Converter:
         if self._uploader is None:
             if not self.config.storage_provider:
                 raise ConfigError(
-                    "本次转换需要文件存储（产出图片链接，或按 URL 方式向视觉模型"
-                    "传图），但 STORAGE_PROVIDER 未配置。请在 .env 中配置存储"
-                    "（S3_*），或改用 base64 直传"
-                    "（VLM_IMAGE_INPUT=base64）并仅产出转写文本（output=text）。"
+                    "本次转换需要文件存储（产出含 url 部件），但 "
+                    "STORAGE_PROVIDER 未配置。请在 .env 中配置存储（S3_*），"
+                    "或改用 base64 部件（output=body,base64,ocr）——图片内嵌"
+                    "产出、VLM 以 base64 直传，不依赖存储。"
                 )
             self._uploader = create_uploader(self.config)
         return self._uploader
 
     @property
     def vision(self):
-        """视觉模型客户端——首次转写时才构造，产出不含转写文本的转换不加载 openai SDK"""
+        """视觉模型客户端——首次转写时才构造并校验凭据（产出不含
+        ocr/alt 的转换不校验凭据、不加载 openai SDK）"""
         if self._vlm is None:
+            self.config.validate_vlm()
             from .vlm import create_vlm
             self._vlm = create_vlm(self.config)
         return self._vlm
@@ -185,18 +193,18 @@ class Converter:
     def convert(self, file_path: Path, output: str | None = None) -> ConversionResult:
         """转换单个文件。
 
-        output 是本次转换的产出组成（逗号分隔多选 url/text/alt，
-        alt 依赖 url），未设置时取配置的 OUTPUT。
+        output 是本次转换的产出组成（逗号分隔多选 body/url/base64/
+        ocr/alt；body 必选锚点，url 与 base64 互斥，ocr/alt 依赖其一），
+        未设置时取配置的 OUTPUT（缺省 body 纯解析）。
         """
         started = time.perf_counter()
         parts = set(parse_output(output or self.config.output).split(","))
 
-        # 产出含图片链接时先确认存储可用（缺配置在拿到文件前报错，
-        # 而不是解析完整个文件后才失败）；base64 直传不需要上传
-        base64_input = self.config.vlm_image_input == "base64"
-        need_upload = "url" in parts or (
-            ("text" in parts or "alt" in parts) and not base64_input
-        )
+        # 上传只发生在产出含 url 部件时（先确认存储可用——缺配置在拿到
+        # 文件前报错，而不是解析完整个文件后才失败）；纯解析与 base64
+        # 内嵌不接触存储
+        need_upload = "url" in parts
+        need_vlm = "ocr" in parts or "alt" in parts
         uploader = self.uploader if need_upload else None
         # 资产库随本次转换创建：同文件去重走内存，跨文件去重走双层磁盘缓存
         store = ImageAssetStore(self.config, self.config.cache_dir, uploader)
@@ -204,8 +212,9 @@ class Converter:
 
         markdown = engine.convert(file_path, store)
         markdown = register_images(markdown, store)
-        self._process_assets(store, parts, need_upload)
-        markdown, image_count = render_blocks(markdown, store, parts)
+        if need_upload or need_vlm:
+            self._process_assets(store, parts)
+        markdown, rendered = render_blocks(markdown, store, parts)
 
         images = [
             ImageInfo(
@@ -214,12 +223,12 @@ class Converter:
                 alt_text=a.alt_text,
                 ocr_text=a.ocr_text,
             )
-            for a in store.all_assets()
+            for a in rendered
         ]
         return ConversionResult(
             markdown=markdown,
             images=images,
-            image_count=image_count,
+            image_count=len(rendered),
             char_count=len(markdown),
             elapsed_ms=int((time.perf_counter() - started) * 1000),
         )
@@ -227,8 +236,7 @@ class Converter:
     def _get_engine(self, suffix: str):
         """解析引擎类并返回本线程的实例（构造有成本，线程内复用）。
 
-        第三方引擎实例的线程安全性不受本工具控制，按线程隔离——
-        CLI 单线程全程一个实例，demo 的工作线程各得其一。
+        第三方引擎实例的线程安全性不受本工具控制，按线程隔离。
         """
         engine_cls = resolve_engine(suffix, self.config.doc_engine)
         cache = getattr(self._engines, "by_cls", None)
@@ -240,46 +248,50 @@ class Converter:
         return engine
 
     # ========== 第三步：上传 + 转写（并发） ==========
-    def _process_assets(self, store: ImageAssetStore, parts: set[str],
-                        need_upload: bool) -> None:
+    def _process_assets(self, store: ImageAssetStore, parts: set[str]) -> None:
         assets = store.all_assets()
         logger.info("待处理图片 %d 张（已去重，产出组成=%s）",
                     len(assets), ",".join(sorted(parts)))
         if not assets:
             return
         # 上传与转写同为 IO 密集，走同一并发框架——两段式（全部上传 →
-        # 全部转写）：渲染需要链接（url 部件）或视觉任务走 URL 传输时上传，
-        # need_upload 由 convert 按同一逻辑判定后传入
-        if need_upload:
+        # 全部转写）：上传只发生在产出含 url 部件时（渲染与传图都需要
+        # 公开链接）；纯 base64 产出无上传阶段
+        if "url" in parts:
             self._upload_all(store, assets)
-        need_text = "text" in parts
+        need_ocr = "ocr" in parts
         need_alt = "alt" in parts
-        if not need_text and not need_alt:
+        if not need_ocr and not need_alt:
             return
 
-        # 视觉任务的图片引用与渲染链接分离：base64 传输给 data URI，
-        # URL 传输给公开链接（上传阶段已完成）
-        base64_input = self.config.vlm_image_input == "base64"
+        # VLM 取图方式由产出组成推导：含 url 部件传公开链接（上传阶段
+        # 已完成），否则传 base64 data URI（字节本地持有）
+        via_url = "url" in parts
 
         def image_ref(asset: ImageAsset) -> str:
-            return asset.data_uri() if base64_input else asset.url
+            return asset.url if via_url else asset.data_uri()
 
         vision = self.vision   # 在调用线程先构造，线程池内只读
 
         def work(asset: ImageAsset) -> None:
-            # URL 传图模式下上传失败的图没有可用的 ref，跳过转写（该图走失败渲染）
-            if not base64_input and not asset.url:
+            # URL 传图时上传失败的图没有可用 ref，跳过转写（该图走失败渲染）
+            if via_url and not asset.url:
                 return
-            if need_text:
+            if need_ocr:
                 cached = store.get_cached_text(asset.sha256, "ocr")
                 if cached is not None:
                     asset.ocr_text = cached
                 else:
-                    asset.ocr_text = vision.ocr(image_ref(asset))
+                    raw = vision.ocr(image_ref(asset))
                     # 空结果不落缓存：成功转写必非空（无文字的图片也输出一行描述），
                     # 空串即失败产物——缓存固化失败，重跑无法重试
-                    if asset.ocr_text:
-                        store.save_cached_text(asset.sha256, "ocr", asset.ocr_text)
+                    if raw:
+                        asset.ocr_text = raw
+                        store.save_cached_text(asset.sha256, "ocr", raw)
+                    else:
+                        # 空内容视同失败：标记串统一字段取值（程序消费方凭
+                        # 「（图片转写失败）」判失败，不以空串混淆「未产出」）
+                        asset.ocr_text = "（图片转写失败）"
             if need_alt:
                 cached = store.get_cached_text(asset.sha256, "alt")
                 if cached is not None:
@@ -303,7 +315,7 @@ class Converter:
                     # 空内容与异常同走此路，不做重试：思考链已消耗本次输出预算，
                     # 重试大概率得到同样结果
                     # 只清理失败子任务：另一子任务已成功（含缓存命中）的结果不覆盖
-                    if need_text and not asset.ocr_text:
+                    if need_ocr and not asset.ocr_text:
                         asset.ocr_text = "（图片转写失败）"
                     if need_alt:
                         asset.alt_text = ""   # 渲染回退「图片」

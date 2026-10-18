@@ -6,7 +6,7 @@ export interface TaskSummary {
   task_id: string;
   filename: string;
   status: TaskStatus;
-  /** 产出组成（url,text 规范序 CSV，上传时选定） */
+  /** 产出组成（body,url,base64,ocr,alt 规范序 CSV，上传时选定） */
   output: string;
   image_count: number | null;
   char_count: number | null;

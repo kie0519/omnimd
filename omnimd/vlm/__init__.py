@@ -1,7 +1,7 @@
 """VLM 视觉模型抽象层
 
 统一契约：ocr(image_ref) / describe(image_ref)——image_ref 是公开 URL
-或 base64 data URI（按 VLM_IMAGE_INPUT 而定）；返回该视觉任务的文本产物。
+或 base64 data URI，两种形态皆可；返回该视觉任务的文本产物。
 
 本层只实现一种协议：OpenAI Chat Completions + image_url，任意 OpenAI
 兼容端点（OpenAI / DeepSeek / GLM / 本地 Ollama / vLLM / 聚合中转站）

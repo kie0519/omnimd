@@ -163,6 +163,13 @@
   background: var(--surface);
 }
 
+.optionsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+
 .optionsTitle {
   margin: 0;
   font-size: var(--t-xs);
@@ -171,15 +178,29 @@
   letter-spacing: 0.02em;
 }
 
-.partBtns {
+/* 纯解析提示：全不选时出现在标题行右侧（hover 解释语义） */
+.pureParseHint {
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+  cursor: help;
+}
+
+.partRows {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.partRow {
+  display: flex;
   gap: var(--s-2);
 }
 
 .partBtn {
+  flex: 1;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: var(--s-1);
   padding: 6px 12px;
   border: 1px solid var(--line-strong);
@@ -191,9 +212,17 @@
     color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
 
-.partBtn:hover {
+.partBtn:hover:not([aria-disabled="true"]) {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* 依赖未满足的锁定态：转写/描述在未选呈现时置灰。
+   用 aria-disabled 而非 disabled——disabled 元素不派发鼠标事件，
+   hover 提示（"请先选择链接或内嵌"）在 Chromium 系不可见 */
+.partBtnLocked {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .partBtnOn {
@@ -240,6 +269,13 @@
   color: var(--ink-2);
   white-space: pre-wrap;
   word-break: break-all;
+  /* 最小高度：内容随选择变化（1-3 行——data URI 在窄列内折行更长），
+     面板高度大体稳定；超长内容内部滚动，不裁切文字 */
+  min-height: 4.6em;
+  max-height: 6.5em;
+  overflow-y: auto;
+  display: flex;
+  align-items: center;
 }
 
 .optionsHint {

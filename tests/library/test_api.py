@@ -3,7 +3,7 @@ convert_many 目录展开与异常透传（stub 转换器，不联网）"""
 import pytest
 
 from omnimd import OmniMD, ConversionResult, VlmConfig, S3Config, ConfigError
-from conftest import make_config
+from tests.helpers import make_config
 
 
 # ---------- 构造：显式配置覆盖链 ----------
@@ -33,7 +33,7 @@ def test_partial_override_falls_back_to_env(full_env, monkeypatch, tmp_path):
     )
     config = md._converter.config
     assert config.vlm_base_url == "https://x"      # 显式对象生效
-    assert config.storage_provider == "s3"         # 环境值兜底
+    assert config.storage_provider == "s3"         # 回落环境值（与显式对象生效对照）
 
 
 def test_vlmconfig_optional_fields_fall_back_to_env(full_env, monkeypatch, tmp_path):

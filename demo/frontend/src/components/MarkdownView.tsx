@@ -37,7 +37,7 @@ export default function MarkdownView({ markdown }: { markdown: string }) {
         components={{
           img: ({ alt, src }) => (
             <span className={s.imgWrap}>
-              {/* 图片来自对象存储公开 URL，点开看原图 */}
+              {/* 图片来自对象存储公开 URL 或内嵌 data URI，点开看原图 */}
               <a href={src} target="_blank" rel="noreferrer" title="在新窗口打开原图">
                 <img src={src} alt={alt ?? ""} loading="lazy" />
               </a>

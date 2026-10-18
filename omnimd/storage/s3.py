@@ -31,7 +31,8 @@ class S3Uploader(StorageUploader):
 
         self.bucket = config.s3_bucket
         self.public_base = f"{config.s3_endpoint_url.rstrip('/')}/{config.s3_bucket}/"
-        # 前缀归一化：前导斜杠会产生 // 双斜杠 URL（多数网关归一为 /，公开访问 404）
+        # 前缀归一化：前导斜杠会产生 // 双斜杠 URL——S3 API 侧多被归一，
+        # 但公开直访 // 路径在多数网关 404
         prefix = (config.s3_key_prefix or "").lstrip("/")
         self.key_prefix = prefix if prefix == "" or prefix.endswith("/") else prefix + "/"
         self._client = boto3.client(
@@ -47,7 +48,7 @@ class S3Uploader(StorageUploader):
         )
 
     def upload_image(self, image_data: bytes, filename: str = "image.png") -> str:
-        """上传图片，返回永久公开 URL。对象 key 内容寻址，重复上传幂等。"""
+        """上传图片，返回永久公开 URL；同 key 重复上传覆盖（幂等）。"""
         key = f"{self.key_prefix}{filename}"
         self._client.upload_fileobj(
             io.BytesIO(image_data),

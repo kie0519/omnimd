@@ -8,7 +8,7 @@
 
 示例：
     omnimd <文件路径>.pdf -o output/
-    omnimd <输入目录>/ -o output/ --output url
+    omnimd <输入目录>/ -o output/ --output body,url,ocr
 """
 import argparse
 import logging
@@ -28,7 +28,10 @@ def _collect_inputs(paths: list[str]) -> list[Path]:
     for p in paths:
         path = Path(p)
         if path.is_dir():
-            files.extend(sorted(f for f in path.iterdir() if f.is_file()))
+            # 跳过点前缀隐藏文件（.DS_Store / desktop.ini 等系统杂质），
+            # 不让单个杂质文件废掉整批转换；可见文件仍显式报错
+            files.extend(sorted(f for f in path.iterdir()
+                                if f.is_file() and not f.name.startswith(".")))
         elif path.is_file():
             files.append(path)
         else:
@@ -47,12 +50,12 @@ def _collect_inputs(paths: list[str]) -> list[Path]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="omnimd",
-        description="文件转 Markdown：正文、图片链接、图片转写文本三合一产出",
+        description="文件转 Markdown：正文锚点，图片链接/内嵌/转写/描述按需组合",
     )
     parser.add_argument("inputs", nargs="+", help="输入文件或目录（支持多个）")
     parser.add_argument("-o", "--out-dir", default="docs", help="输出目录（缺省 docs/）")
-    parser.add_argument("--output", default=None, metavar="url,text",
-                        help="产出组成，逗号分隔多选（缺省读 OUTPUT，未设置为 url,text）：url=图片链接，text=转写文本，alt=链接描述（依赖 url；text/alt 需调用视觉模型，产生调用成本）")
+    parser.add_argument("--output", default=None, metavar="body,url,ocr",
+                        help="产出组成，逗号分隔多选（缺省读 OUTPUT，未设置为 body 纯解析）：body=正文（必选锚点，省略自动包含），url=图片公开链接，base64=图片内嵌（与 url 互斥），ocr=转写文本，alt=描述文本（ocr/alt 依赖 url 或 base64，需调用视觉模型，产生模型费用）")
     parser.add_argument("--concurrency", type=int, default=None, help="图片转写并发数（缺省读 VLM_CONCURRENCY，未配置为 8）")
     parser.add_argument("--cache-dir", default=None, help="缓存目录：转写/URL 缓存（缺省读 CACHE_DIR，未配置为系统用户缓存目录）")
     parser.add_argument("-v", "--verbose", action="store_true", help="输出调试日志")

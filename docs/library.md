@@ -18,7 +18,7 @@ Python ≥ 3.10。依赖（解析引擎、openai SDK、boto3 等）随包安装�
 
 用法与大模型 SDK 同构：
 
-1. **构造**：配齐连接配置（视觉模型 + 文件存储），构造一个 `OmniMD` 客户端；
+1. **构造**：构造一个 `OmniMD` 客户端（连接配置缺省读环境变量 / .env——纯解析无需凭据即可构造，凭据在首次转写/上传时才校验）；
 2. **转换**：`convert()` 只传文件与本次转换的产出组成——连接配置不出现在业务调用里。
 
 ```python
@@ -29,7 +29,7 @@ result = md.convert("报告.pdf")   # → ConversionResult
 result.markdown                  # 完整 Markdown 文本（str）
 ```
 
-构造成功即配置完整：缺必填凭据、DOC_ENGINE 等运行参数取值不合法都在构造时报错并列出全部问题；存储配置按需校验（产出需要上传时才检查，见 §五）。实例可重复用于任意多个文件——引擎与模型客户端在实例内建立，多文件转换不重复初始化；转写/URL 缓存落磁盘，跨实例、跨进程共享。
+构造即校验运行参数（DOC_ENGINE / OUTPUT 等取值不合法在构造时报错并列出全部问题）；连接凭据按消费方惰性校验——首次转写/描述时查 VLM 凭据三项，首次上传时查存储配置（见 §六），缺配置给出带指引的报错。实例可重复用于任意多个文件——引擎与模型客户端在实例内建立，多文件转换不重复初始化；转写/URL 缓存落磁盘，跨实例、跨进程共享。
 
 ## 三、构造方式
 
@@ -39,7 +39,7 @@ result.markdown                  # 完整 Markdown 文本（str）
 md = OmniMD()
 ```
 
-读取的环境变量与命令行完全一致（见 [.env.example](../.env.example)）——同一份配置同时驱动 CLI 与库。注意：导入 omnimd 即会加载当前目录与包所在目录的 .env 到进程环境（逐个补缺、不覆盖已设值）。最小部署只需 VLM 凭据三项（KEY/URL/MODEL，任意 OpenAI 兼容端点直接接入；`VLM_THINKING` 可选思考控制方式、缺省 none）：配合 `VLM_IMAGE_INPUT=base64`（图片直传视觉模型），`output="text"` 的转换不依赖存储；缺省的 URL 传图模式下，产出含图片链接或含转写时才要求存储配置。构造参数可覆盖环境值：
+读取的环境变量与命令行完全一致（见 [.env.example](../.env.example)）——同一份配置同时驱动 CLI 与库。注意：导入 omnimd 即会加载当前目录与包所在目录的 .env 到进程环境（逐个补缺、不覆盖已设值）。部署面按产出组成分级：纯解析（`body`）无需凭据；转写（`ocr`/`alt` 部件）需 VLM 凭据三项（KEY/URL/MODEL，任意 OpenAI 兼容端点直接接入；`VLM_THINKING` 可选思考控制方式、缺省 none），配合不含 `url` 部件的产出即不需要存储（图以 base64 直传视觉模型）；产出含 `url` 部件时才要求存储配置。构造参数可覆盖环境值：
 
 ```python
 md = OmniMD(
@@ -86,25 +86,28 @@ result.char_count      # 产出字符数
 result.elapsed_ms      # 转换耗时（毫秒）
 ```
 
-`images` 是产出中每张图片的结构化元数据——程序消费方（RAG 管线、agent）免于解析 Markdown；字段值反映管线结果而非产出组成（url 为空 = 未上传或上传失败；ocr_text / alt_text 为空 = 本次产出不含该部件或转写失败）。
+`images` 是产出中每张图片的结构化元数据——程序消费方（RAG 管线、agent）免于解析 Markdown；字段值反映管线结果而非产出组成（url 为空 = 未上传或上传失败；ocr_text 为空 = 本次产出不含该部件或该图被跳过，转写失败时为「（图片转写失败）」标记串；alt_text 为空 = 不含该部件或生成失败，渲染回退「图片」）。
 
-`output` 参数指定本次转换的产出组成（逗号分隔多选，未设置时取配置的 `OUTPUT`）。取值域三个部件：
+`output` 参数指定本次转换的产出组成（逗号分隔多选，未设置时取配置的 `OUTPUT`）。取值域五个部件：
 
 | 部件 | 产出形态 | 依赖 | 成本 |
 |---|---|---|---|
-| `url` | `![alt](图片公开链接)`——图片可看 | 存储 | 上传（同图去重，重跑不再上传） |
-| `text` | 图片下方的完整转写文本块——内容可检索 | — | 每图一次视觉模型调用 |
-| `alt` | 链接内的一句话描述文本——无障碍/检索锚点 | `url` | 每图一次视觉模型调用 |
+| `body` | 文件正文 Markdown（必选锚点，省略时自动包含） | 无 | 解析引擎 |
+| `url` | `![alt](图片公开链接)`——图片可看 | 存储；与 `base64` 互斥 | 上传（同图去重，重跑不再上传） |
+| `base64` | `![alt](data:image/...)`——图片内嵌自包含 | 与 `url` 互斥 | 产出体积膨胀 |
+| `ocr` | 图片下方的完整转写文本块——内容可检索 | 视觉模型；依赖 `url` 或 `base64` | 每图一次视觉模型调用 |
+| `alt` | 链接内的一句话描述文本——无障碍/检索锚点 | 视觉模型；依赖 `url` 或 `base64` | 每图一次视觉模型调用 |
 
 ```python
-md.convert("报告.pdf", output="url")        # 仅图片公开链接
-md.convert("报告.pdf", output="text")       # 仅图片转写文本
-md.convert("报告.pdf", output="url,alt")    # 链接 + 一句话描述
-md.convert("报告.pdf", output="url,text")   # 链接 + 转写文本（未设置时取此值）
-md.convert("报告.pdf", output="url,text,alt")   # 全形态
+md.convert("报告.pdf")                          # 纯解析（body，未设置时取此值）
+md.convert("报告.pdf", output="body,url")        # 正文 + 图片链接
+md.convert("报告.pdf", output="body,base64,ocr") # 正文 + 内嵌 + 转写
+md.convert("报告.pdf", output="body,url,ocr,alt")   # 全形态
 ```
 
-同一个实例可交替使用不同产出组成——视觉模型客户端惰性构造，仅含转写文本或描述文本的转换才调用视觉模型（产生调用成本）；转写与描述的结果各自独立缓存，重跑不再调用。
+组合规则：`url` 与 `base64` 互斥（图片只能有一种呈现）；`ocr`/`alt` 依赖 `url` 或 `base64`（图片内容需有载体）；`body` 为必选锚点，省略时自动包含。
+
+同一个实例可交替使用不同产出组成——视觉模型客户端惰性构造，仅含转写或描述的转换才调用视觉模型（产生调用成本）；转写与描述的结果各自独立缓存，重跑不再调用。
 
 ### 4.2 批量
 
@@ -134,7 +137,7 @@ for path, result in results.items():
 
 产出组成不在构造参数里——它是每次 `convert` 的参数（`output=`），缺省取配置的 `OUTPUT`。参数含义与 .env 变量一一对应（`DOC_ENGINE` / `CACHE_DIR` / `VLM_CONCURRENCY` / `OUTPUT`）。缓存目录缺省取各平台用户缓存目录：Linux `~/.cache/omnimd/`、macOS `~/Library/Caches/omnimd/`、Windows `%LOCALAPPDATA%\omnimd\Cache`。
 
-传图方式（`VLM_IMAGE_INPUT`，`url` / `base64`）是连接配置，只经 .env 设置：`base64` 直传时图片不经过对象存储，`output="text"` 可不配存储运行；缓存按传图方式隔离，切换后同图重新转写。
+VLM 取图方式无配置项——由产出组成推导：含 `url` 部件传公开 URL（图片已上传），不含则传 base64（字节本地持有，天然兼容本地端点）。存储按需不发生作用：产出不含 `url` 部件时不校验、不上传，已配置的存储不接触。端点不支持 URL 传图（Ollama 等本地端点）且产出含 `url` 部件时报错，指引改用 `base64` 部件或换端点。
 
 ## 六、错误处理
 
@@ -181,7 +184,7 @@ def context_for_agent(files: list[str]) -> str:
 图片信息走结构化清单（免解析 Markdown）：
 
 ```python
-result = md.convert("报告.pdf", output="url,text,alt")
+result = md.convert("报告.pdf", output="body,url,ocr,alt")
 for img in result.images:          # ImageInfo(sha256, url, alt_text, ocr_text)
     index_by_sha[img.sha256] = img.url   # RAG 多模态入库示例
 ```

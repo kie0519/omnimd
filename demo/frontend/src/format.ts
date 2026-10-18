@@ -46,3 +46,9 @@ export function groupFormats(formats: string[] | null): { label: string; exts: s
 export function localNowIso(): string {
   return new Date().toISOString().slice(0, 19) + "Z";
 }
+
+/** 上传上限（MB），前后端校验共用 */
+export const MAX_UPLOAD_MB = 50;
+
+/** 同时进行的转换任务上限，前后端校验共用 */
+export const MAX_CONCURRENT_TASKS = 3;

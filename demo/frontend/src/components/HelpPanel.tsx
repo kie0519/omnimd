@@ -1,19 +1,19 @@
 import { useEffect, useRef } from "react";
-import { groupFormats } from "../format";
+import { groupFormats, MAX_CONCURRENT_TASKS, MAX_UPLOAD_MB } from "../format";
 import { IcX } from "./Icons";
 import s from "./HelpPanel.module.css";
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  /** 后端支持扩展名清单——格式列表的唯一来源，不在此复制第二份 */
+  /** 后端支持扩展名清单（来自 /api/formats；null 表示尚未就绪） */
   formats: string[] | null;
 }
 
 /**
  * 使用指南（只读）：怎么用 / 参数怎么配 / 限制与隐私。
  * 连接配置不在界面上编辑——连接配置只读服务端 .env；
- * 面板只解释配置在哪、有哪些维度。产出组成是上传时可选的运行参数，
+ * 面板只解释配置在哪、有哪些配置项。产出组成是上传时可选的运行参数，
  * 在上传区选择，不在此面板操作。
  */
 export default function HelpPanel({ open, onClose, formats }: Props) {
@@ -78,14 +78,14 @@ export default function HelpPanel({ open, onClose, formats }: Props) {
             <p className={s.note}>
               配置分两类：<b>连接配置</b>决定「用哪家的模型与存储」，
               只在服务端的 <code>.env</code> 中配置（<b>切换只改 .env，不改代码</b>
-              ，改完重启服务生效），界面上不提供编辑；
+              ，改完重启服务，新配置才会用上），界面上不提供编辑；
               <b>产出组成</b>是运行参数，在上传区按次选择。
             </p>
             <div className={s.tableWrap}>
               <table className={s.table}>
                 <thead>
                   <tr>
-                    <th>维度</th>
+                    <th>配置项</th>
                     <th>可选值</th>
                     <th>说明</th>
                   </tr>
@@ -97,36 +97,38 @@ export default function HelpPanel({ open, onClose, formats }: Props) {
                       {/* 取值以库的引擎注册表（omnimd/engines）为准 */}
                       <code>markitdown</code> / <code>anydoc</code>
                     </td>
-                    <td>非 PDF、非图片文件的解析器（PDF 固定走专用引擎，图片单独处理）</td>
+                    <td>负责把文档读成文字（PDF 固定走专用引擎，图片单独处理）</td>
                   </tr>
                   <tr>
-                    <td>VLM 视觉模型</td>
-                    <td>任意 OpenAI 兼容端点</td>
-                    <td>图片转写端点，凭据三项（<code>VLM_API_KEY</code> / <code>VLM_BASE_URL</code> / <code>VLM_MODEL</code>）直接接入（OpenAI / DeepSeek / 本地 Ollama 等）；<code>VLM_THINKING</code> 选思考控制方式</td>
+                    <td>视觉模型</td>
+                    <td>任意 OpenAI 兼容服务</td>
+                    <td>负责看图转写（OpenAI / 智谱 GLM / 本地 Ollama 等），密钥填 <code>VLM_API_KEY</code> / <code>VLM_BASE_URL</code> / <code>VLM_MODEL</code> 三项；<code>VLM_THINKING</code> 选思考方式</td>
                   </tr>
                   <tr>
                     <td>文件存储</td>
                     <td>
                       <code>s3</code>
                     </td>
-                    <td>图片托管后端（S3 兼容对象存储：MinIO / OBS / OSS / COS 等），产出公开链接</td>
+                    <td>给「链接」存放图片的地方（S3 兼容对象存储：MinIO / OBS / OSS / COS 等）</td>
                   </tr>
                 </tbody>
               </table>
             </div>
             <p className={s.note}>
-              以上连接配置的模板与各项含义见 omnimd 仓库的{" "}
-              <code>.env.example</code>（密钥等真实值只存在于服务端{" "}
-              <code>.env</code>，缺失时服务可启动，首次转换会失败并显示配置错误）。
+              连接配置怎么填见 omnimd 仓库的{" "}
+              <code>.env.example</code>（密钥只写在服务端{" "}
+              <code>.env</code> 里；只提取正文时不需要配置任何密钥，
+              选了转写或链接而密钥缺失时，转换会提示缺什么）。
             </p>
             <p className={s.note}>
               <b>产出组成</b>（上传时可选）：
-              <code>图片链接</code> 保留图片公开链接，
-              <code>转写文本</code> 附加视觉模型的图片转写，
-              <code>链接描述</code> 为链接生成一句话描述（依赖图片链接）；
-              转写文本与链接描述需调用视觉模型，产生调用成本。
-              至少选一项；缺省选中图片链接与转写文本。
-              选择随上传记录保存，历史记录按各自的组成回看。
+              <code>链接</code> 给图片一个可点开的网址，随时查看原图；
+              <code>内嵌</code> 把图片直接放进 Markdown，单文件自带全部内容，离线也能看；
+              <code>转写</code> 用视觉模型把图片内容转成文字，可搜索、可引用；
+              <code>描述</code> 一句话说明图片是什么。
+              链接和内嵌二选一；要转写或描述，要先选链接或内嵌其中一个（这两项会调用视觉模型，产生模型费用）。
+              都不选就只提取正文——不调用模型、不用配置存储。
+              选择会记住，下次上传自动沿用；每条历史记录按上传时的选择展示。
             </p>
           </section>
 
@@ -134,7 +136,7 @@ export default function HelpPanel({ open, onClose, formats }: Props) {
           <section className={s.section}>
             <h3 className={s.sectionTitle}>限制与隐私</h3>
             <ul className={s.list}>
-              <li>单文件 ≤ 50MB，同时最多 3 个转换任务；并发占满时新上传会被拒绝，请稍后重试。</li>
+              <li>单文件 ≤ {MAX_UPLOAD_MB}MB，同时最多 {MAX_CONCURRENT_TASKS} 个转换任务；占满时新上传自动排队，依次提交。</li>
               <li>上传的原始文件为临时文件，转换完成后即删除。</li>
               <li>服务端只保留产出的 Markdown 与统计信息，不保留原始文件。</li>
               <li>删除历史记录会同时清除对应的转换结果。</li>

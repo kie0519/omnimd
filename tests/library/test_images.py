@@ -5,7 +5,7 @@ import pytest
 from PIL import Image
 
 from omnimd.images import ImageAsset, ImageAssetStore
-from conftest import make_config
+from tests.helpers import make_config
 
 
 def make_png_bytes(width: int, height: int) -> bytes:
@@ -28,9 +28,9 @@ class StubUploader:
         return f"https://cdn.example/{filename}"
 
 
-def make_store(tmp_path, image_input="url", model="m"):
+def make_store(tmp_path, model="m"):
     return ImageAssetStore(
-        make_config(vlm_image_input=image_input, vlm_model=model),
+        make_config(vlm_model=model),
         tmp_path / "cache", None,
     )
 
@@ -70,7 +70,7 @@ def test_data_uri_roundtrip():
     assert base64.b64decode(uri.split(",", 1)[1]) == data
 
 
-# ---------- 视觉产物缓存：按 kind 读写、按传图方式隔离 ----------
+# ---------- 视觉产物缓存：按 kind 读写、按模型隔离 ----------
 
 def test_text_cache_roundtrip(tmp_path):
     store = make_store(tmp_path)
@@ -81,14 +81,12 @@ def test_text_cache_roundtrip(tmp_path):
     assert store.get_cached_text(sha, "alt") is None   # kind 互相独立
 
 
-def test_cache_isolated_by_transport(tmp_path):
-    """base64 与 url 传图方式的缓存目录不同——切换后强制重新转写"""
-    store_url = make_store(tmp_path, image_input="url")
-    store_b64 = make_store(tmp_path, image_input="base64")
-    assert store_url._prompt_dirs != store_b64._prompt_dirs
-    sha = hashlib.sha256(b"y").hexdigest()
-    store_url.save_cached_text(sha, "ocr", "url 模式产物")
-    assert store_b64.get_cached_text(sha, "ocr") is None
+def test_cache_key_without_transport_dimension(tmp_path):
+    """缓存键不含传图方式维度——VLM 对同一张图的转写不因 URL 还是
+    base64 传入而不同（取图方式由产出组成推导，属实现细节）"""
+    store = make_store(tmp_path)
+    for path in store._prompt_dirs.values():
+        assert "--url--" not in path.name and "--base64--" not in path.name
 
 
 def test_cache_isolated_by_model(tmp_path):

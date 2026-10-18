@@ -1,7 +1,4 @@
-"""接口契约的类型定义：Pydantic 响应模型与字段语义。
-
-字段语义只注释在这里，路由层与前端不重复写。
-"""
+"""接口契约的类型定义：Pydantic 响应模型与字段语义。"""
 
 from pydantic import BaseModel
 
@@ -20,11 +17,11 @@ class TaskSummary(BaseModel):
     task_id: str
     filename: str
     status: str                  # pending / running / done / failed
-    output: str                  # 产出组成（url,text 规范序 CSV，上传时选定）
+    output: str                  # 产出组成（body,url,base64,ocr,alt 规范序 CSV，上传时选定）
     image_count: int | None = None    # done 时统计：产出中的图片块数
     char_count: int | None = None     # done 时统计：产出字符数
-    elapsed_ms: int | None = None     # done 时统计：转换耗时（毫秒）
-    cache_hit: bool | None = None     # done 时判定：耗时 < 2s 且有图片
+    elapsed_ms: int | None = None     # done/failed 时统计：转换耗时（failed 记录失败前耗时）
+    cache_hit: bool | None = None     # done 时判定：耗时 < 2s 且有图片，图片文件输入且产出不含转写/描述的除外（口径见 tasks.py）
     created_at: str               # ISO 8601 UTC（T 分隔、Z 后缀）
 
 

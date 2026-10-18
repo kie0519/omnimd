@@ -32,6 +32,6 @@ jobs:
       - name: Type check and build
         working-directory: demo/frontend
         run: |
-          npm install
+          npm ci
           npx tsc --noEmit
           npx vite build

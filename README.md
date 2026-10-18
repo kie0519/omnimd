@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/kie0519/omnimd/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/kie0519/omnimd/tests.yml" alt="tests"></a>
   <a href="https://pypi.org/project/omnimd/"><img src="https://img.shields.io/pypi/v/omnimd?color=0f6b6b" alt="pypi version"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2e7d43" alt="license MIT"></a>
+  <a href="https://github.com/kie0519/omnimd/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-2e7d43" alt="license MIT"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-3776ab" alt="python">
   <img src="https://img.shields.io/badge/formats-38-8a6b15" alt="formats">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-5c6470" alt="platform">
@@ -23,7 +23,7 @@ PDF、Office 文档、图片等 38 种格式，统一转换为一份信息完整
 
 ## 转换效果
 
-一份带架构图的 PDF（`--output url,alt,text`），转换后在图片位置产出：
+一份带架构图的 PDF（`--output body,url,ocr,alt`），转换后在图片位置产出：
 
 ```markdown
 ![图片：系统架构图——三个模块的连接关系与数据流向](https://<存储域名>/<桶名>/<前缀><sha256>.png)
@@ -34,7 +34,7 @@ PDF、Office 文档、图片等 38 种格式，统一转换为一份信息完整
 - 各模块下方标注实例数：网关 ×2、核心 ×4、数据层 ×2
 ```
 
-一张柱状图（缺省 `--output url,text`），转换后逐点成为可检索的数据：
+一张柱状图（`--output body,url,ocr`），转换后逐点成为可检索的数据：
 
 ```markdown
 ![图片](https://<存储域名>/<桶名>/<前缀><sha256>.png)
@@ -54,7 +54,7 @@ PDF、Office 文档、图片等 38 种格式，统一转换为一份信息完整
 
 ## 特性
 
-- **图片三部件**——公开链接、转写文本、描述文本，按需组合选定
+- **产出按需组合**——正文必选锚点，图片链接、内嵌、转写文本、描述文本四部件自由搭配，全不选即纯解析
 - **38 种输入格式**——PDF 走图片保真管线，文档引擎可切换，图片直接输入
 - **转写按图分策略**——表格逐格、图表逐点、图示重建 Mermaid，不确定处标注 `[?]`
 - **双层缓存**——同配置重跑，不调模型、不上传
@@ -64,8 +64,8 @@ PDF、Office 文档、图片等 38 种格式，统一转换为一份信息完整
 ## 环境要求
 
 - Python ≥ 3.10
-- 视觉模型（VLM）：任意 OpenAI 兼容端点（DeepSeek / OpenAI / 本地 Ollama / vLLM 等）
-- 对象存储：S3 兼容（MinIO / OBS / OSS / COS 等，自托管或云厂商）；产出仅转写文本且 `VLM_IMAGE_INPUT=base64` 时可免
+- 视觉模型（VLM）：任意 OpenAI 兼容端点（OpenAI / 智谱 GLM / 本地 Ollama / vLLM 等）；本地端点不含 url 部件即可用（base64 直传，天然兼容）
+- 对象存储：S3 兼容（MinIO / OBS / OSS / COS 等，自托管或云厂商）；产出不含 url 部件（base64 内嵌或纯解析）时不接触
 
 ## 安装
 
@@ -78,18 +78,22 @@ pip install omnimd           # 或：uv tool install omnimd
 ## 快速开始
 
 ```bash
-omnimd <文件路径>.pdf -o output/                 # 单文件 → output/<文件名>.md
+omnimd <文件路径>.pdf -o output/                 # 单文件 → output/<文件名>.md（缺省纯解析）
 omnimd <输入目录>/ -o output/                    # 目录批处理，图片与文档可混排
-omnimd <文件路径>.pdf -o output/ --output text   # 仅转写文本（base64 传图时不依赖存储）
+omnimd <文件路径>.pdf -o output/ --output body,url,ocr   # 正文 + 图片链接 + 转写文本
 ```
 
 ## 产出组成
 
 | 部件 | 产出形态 | 依赖 | 成本 |
 |---|---|---|---|
-| `url` | `![alt](图片公开链接)`——图片可看 | 存储 | 上传（同图去重，重跑不再上传） |
-| `text` | 图片下方的完整转写文本块——内容可检索 | — | 每图一次视觉模型调用 |
-| `alt` | 链接内的一句话描述文本——无障碍/检索锚点 | `url` | 每图一次视觉模型调用 |
+| `body` | 文件正文 Markdown（必选锚点，省略时自动包含） | 无 | 解析引擎 |
+| `url` | `![alt](图片公开链接)`——图片可看 | 存储；与 `base64` 互斥 | 上传（同图去重，重跑不再上传） |
+| `base64` | `![alt](data:image/...)`——图片内嵌自包含 | 与 `url` 互斥 | 产出体积膨胀 |
+| `ocr` | 图片下方的完整转写文本块——内容可检索 | 视觉模型；依赖 `url` 或 `base64` | 每图一次视觉模型调用 |
+| `alt` | 链接内的一句话描述文本——无障碍/检索锚点 | 视觉模型；依赖 `url` 或 `base64` | 每图一次视觉模型调用 |
+
+全不选即纯解析（仅 `body`）：仅提取正文，不调用模型、不依赖存储。
 
 ## 使用方式
 
@@ -100,7 +104,7 @@ omnimd <文件路径>.pdf -o output/ --output text   # 仅转写文本（base64 
 | 参数 | 说明 |
 |------|------|
 | `-o, --out-dir` | 输出目录（缺省 `docs/`）；同批同名冲突自动加序号，同名重跑时覆盖刷新 |
-| `--output` | 产出组成，逗号分隔多选：`url` 图片公开链接 / `text` 转写文本 / `alt` 描述文本（依赖 url）；缺省读 `OUTPUT`，未设置时为 `url,text` |
+| `--output` | 产出组成，逗号分隔多选：`body` 正文（必选锚点）/ `url` 图片公开链接 / `base64` 图片内嵌（与 url 互斥）/ `ocr` 转写文本 / `alt` 描述文本（ocr/alt 依赖 url 或 base64）；缺省读 `OUTPUT`，未设置时为 `body`（纯解析） |
 | `--concurrency` | 转写并发数，缺省读 `VLM_CONCURRENCY`（未配置时为 8） |
 | `--cache-dir` | 缓存目录（转写/URL 缓存），缺省读 `CACHE_DIR`（未配置为系统用户缓存目录） |
 | `-v` | 调试日志 |
@@ -127,7 +131,7 @@ result = md.convert("<文件路径>.pdf")          # → ConversionResult
 result.markdown                              # 产出全文（str）
 result.images                               # 图片清单：sha256 / url / alt_text / ocr_text
 result.image_count, result.char_count, result.elapsed_ms   # 转换统计
-md.convert("<文件路径>.pdf", output="url")     # 本次产出组成：仅图片公开链接
+md.convert("<文件路径>.pdf", output="body,url")  # 本次产出组成：正文 + 图片公开链接
 results = md.convert_many(["<文件路径>.pdf", "<输入目录>/"])  # 批量
 ```
 
@@ -135,14 +139,14 @@ results = md.convert_many(["<文件路径>.pdf", "<输入目录>/"])  # 批量
 
 ### Claude Code skill
 
-适合在 Claude Code 对话里一句话转换文件——skill 部署后直接说「把这个 PDF 转成 Markdown」。skill 目录在本仓库 [skills/omnimd/](skills/omnimd)，复制到 Claude Code 的 skill 目录即可使用：用户级 `~/.claude/skills/`（任意会话可用）或项目级 `<项目>/.claude/skills/`。仓库内开发可一键部署：
+适合在 Claude Code 对话里一句话转换文件——skill 部署后直接说「把这个 PDF 转成 Markdown」。skill 是纯指令形态（教 Agent 安装、配置与调用 `omnimd` 命令，工具本体经 pip 分发），目录在本仓库 [skills/omnimd/](https://github.com/kie0519/omnimd/tree/main/skills/omnimd)，复制到 Claude Code 的 skill 目录即可使用：用户级 `~/.claude/skills/`（任意会话可用）或项目级 `<项目>/.claude/skills/`。仓库内开发可一键部署：
 
 ```bash
 python scripts/sync_skill.py            # 缺省 → <仓库上级>/.claude/skills/omnimd
 python scripts/sync_skill.py <目标目录>
 ```
 
-使用前在 skill 目录下复制 `.env.example` 为 `.env` 并填入密钥。指令与参数映射见 [skills/omnimd/SKILL.md](https://github.com/kie0519/omnimd/blob/main/skills/omnimd/SKILL.md)。
+使用前确保 `omnimd` 已安装（`pip install omnimd`），并在工作目录配置 `.env`（模板见 skill 目录的 `.env.example`）。指令与参数映射见 [skills/omnimd/SKILL.md](https://github.com/kie0519/omnimd/blob/main/skills/omnimd/SKILL.md)。
 
 ### Web 演示
 
@@ -158,23 +162,24 @@ python scripts/sync_skill.py <目标目录>
 ./start.sh start    # 按需构建前端 → 单进程启动，访问 http://127.0.0.1:8300
 ```
 
-脚本跨平台（Linux / macOS / Windows Git Bash），另有 stop / restart / status / dev / logs 子命令；部署细节见 [demo/README.md](https://github.com/kie0519/omnimd/blob/main/demo/README.md)。
+脚本跨平台（Linux / macOS / Windows Git Bash），另有 stop / status / logs 子命令（再次执行 start 即重启加载最新代码）；部署细节见 [demo/README.md](https://github.com/kie0519/omnimd/blob/main/demo/README.md)。
 
 ## 配置
 
-复制 [.env.example](https://github.com/kie0519/omnimd/blob/main/.env.example) 为 `.env` 填入密钥——每个变量的含义、可选值与缺省值都以该文件为准，必填项缺失时启动报错并列出全部缺失项。骨架：
+复制 [.env.example](https://github.com/kie0519/omnimd/blob/main/.env.example) 为 `.env` 填入密钥——每个变量的含义、可选值与缺省值都以该文件为准。纯解析（仅正文）无需任何密钥；产出含转写/描述时 VLM 凭据三项必填，首次此类转换时报错并列出全部缺失项。骨架：
 
 ```ini
-# ===== 视觉模型（凭据三项必填）=====
+# ===== 视觉模型（产出含转写/描述时必填）=====
 VLM_API_KEY=<密钥>
 VLM_BASE_URL=<接口地址>
 VLM_MODEL=<模型名>
 
 # ===== 产出组成 =====
-OUTPUT=url,text      # url / text / alt 逗号分隔多选，alt 依赖 url
+OUTPUT=body          # body / url / base64 / ocr / alt 逗号分隔多选；
+                     # url 与 base64 互斥，ocr/alt 依赖 url 或 base64；缺省 body（纯解析）
 ```
 
-存储按需配置：产出含图片链接、或以 URL 传图转写时需要；`VLM_IMAGE_INPUT=base64` 且仅要转写文本时可免。
+存储按需配置：产出含 url 部件时需要；base64 内嵌或纯解析（仅 body）时可免。
 
 `VLM_THINKING` 控制思考参数的下发方式——OpenAI 兼容生态有多种协议形态，取值与端点适配速查见 [.env.example](https://github.com/kie0519/omnimd/blob/main/.env.example)。两点说明：转写是提取任务，通常关闭思考（`*-off`）以省输出预算，开启（`*-on`）用于复杂图表的质量实验；OpenAI 官方推理模型（o 系 / GPT-5）要求 `max_completion_tokens` 而非 `max_tokens`，与本实现不兼容。
 
@@ -184,10 +189,10 @@ OUTPUT=url,text      # url / text / alt 逗号分隔多选，alt 依赖 url
 
 1. **解析**——正文提取为 Markdown。PDF 固定走 pymupdf4llm（页面图片保真导出），10 种图片格式固定走图片引擎，其余 27 种文档格式按 `DOC_ENGINE` 选定引擎
 2. **图片注册**——短边小于 60px 的装饰图丢弃；其余按 SHA-256 内容寻址去重，同一张图只处理一次，多处引用共享
-3. **上传与转写**——图片并发上传至对象存储取得公开 URL；产出组成含 text/alt 时，每图并发调用视觉模型
+3. **上传与转写**——产出含 url 部件时图片并发上传至对象存储取得公开 URL；含 ocr/alt 部件时每图并发调用视觉模型，图以 URL 或 base64 传入（由产出组成推导：含 url 传 URL，否则传 base64；纯解析跳过本步）
 4. **渲染写出**——按产出组成拼装图片块，与正文合成写入输出目录
 
-成本模型：首次转换每图一次模型调用、一次上传；同配置重跑由双层缓存全数命中，不调模型、不上传。缓存键按模型、传图方式、思考控制方式、任务类型（转写 / 描述）与提示词摘要隔离——换模型即重转，改提示词即失效。设计细节见[架构文档](https://github.com/kie0519/omnimd/blob/main/docs/architecture.md)。
+成本模型：首次转换每图一次模型调用、一次上传（纯解析两者皆无）；同配置重跑由双层缓存全数命中，不调模型、不上传。缓存键按模型、思考控制方式、任务类型（转写 / 描述）与提示词摘要隔离——换模型即重转，改提示词即失效。设计细节见[架构文档](https://github.com/kie0519/omnimd/blob/main/docs/architecture.md)。
 
 ## 路线图
 

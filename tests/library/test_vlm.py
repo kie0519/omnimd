@@ -1,8 +1,11 @@
 """VLM 层回归：瘦客户端契约（mock 客户端，不联网）"""
 import pytest
 
+from openai import BadRequestError
+
+from omnimd.exceptions import OmniMDError
 from omnimd.vlm.openai_compat import OpenAICompatVlm
-from conftest import make_config
+from tests.helpers import make_config
 
 
 class _Message:
@@ -72,3 +75,44 @@ def test_api_error_propagates_unchanged():
     with pytest.raises(RuntimeError, match="api 连接失败"):
         vlm.ocr("data:image/png;base64,xxx")
     assert fake.calls == 1
+
+
+# ---------- URL 传图不支持的端点能力边界（唯一改写分支） ----------
+
+def _bad_request(msg: str):
+    import httpx
+
+    request = httpx.Request("POST", "https://vlm.example/v1/chat/completions")
+    response = httpx.Response(400, request=request,
+                              json={"error": {"message": msg}})
+    return BadRequestError(msg, response=response, body=response.json())
+
+
+def test_url_unsupported_error_becomes_guidance():
+    """URL 传图被拒（Ollama 文案）：改写为带两条出路的 OmniMDError"""
+    vlm, _ = _vlm_with(
+        error=_bad_request(
+            "image URLs are not currently supported, "
+            "please use base64 encoded data instead"
+        ))
+    with pytest.raises(OmniMDError) as e:
+        vlm.ocr("https://cdn.example/img.png")
+    msg = str(e.value)
+    assert "base64" in msg and "端点" in msg   # 指引两条出路：换部件 / 换端点
+
+
+def test_other_bad_request_propagates():
+    """不匹配能力边界的 400：原样透传，不改写"""
+    boom = _bad_request("Invalid model: nope")
+    vlm, _ = _vlm_with(error=boom)
+    with pytest.raises(BadRequestError, match="Invalid model"):
+        vlm.ocr("https://cdn.example/img.png")
+
+
+def test_data_uri_bad_request_not_rewritten():
+    """data URI 传图时的 400：即使文案命中 marker 也原样透传——改写分支
+    只作用于 URL 传图（image_ref 前缀是前置条件）"""
+    boom = _bad_request("please use base64 encoded data instead")
+    vlm, _ = _vlm_with(error=boom)
+    with pytest.raises(BadRequestError):
+        vlm.ocr("data:image/png;base64,xxx")

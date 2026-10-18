@@ -1,6 +1,6 @@
 """提示词包：每个视觉任务一个模块
 
-- ocr.py：图片完整转写（text 部件的正文级产物）
+- ocr.py：图片完整转写（ocr 部件的正文级产物）
 - alt.py：图片 alt 文本（alt 部件的一句话描述）
 
 各模块导出 <任务>_SYSTEM_PROMPT / <任务>_USER_PROMPT 一对常量，

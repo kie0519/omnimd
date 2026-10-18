@@ -10,7 +10,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import APIRouter, FastAPI, Form, HTTPException, UploadFile
+from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -44,22 +44,10 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="omnimd demo", lifespan=lifespan)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",               # 开发模式 Vite；生产同源无需 CORS
-        "http://127.0.0.1:5173",
-    ],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# API 全部收拢在本 router，/api 前缀由 include_router 一处给定；
-# 前端挂载位于文件末尾 include_router 之后——路由按注册顺序匹配，
-# catch-all 挂载必须晚于全部 API 注册
-api = APIRouter()
+# API 子应用：/api 命名空间整体交给它（app.mount("/api", ...)）——
+# 命名空间内未匹配的路径与方法由它自己返回 404 JSON，与根上的
+# SPA 静态兜底互不越界。API 文档随子应用在 /api/docs
+api_app = FastAPI(title="omnimd demo API")
 
 
 def _summary(row) -> TaskSummary:
@@ -73,20 +61,20 @@ def _summary(row) -> TaskSummary:
     )
 
 
-@api.get("/health")
+@api_app.get("/health")
 def health() -> dict:
     # 纯探活：给部署检查与前端离线检测反复调用，不携带业务数据
     return {"status": "ok"}
 
 
-@api.get("/formats")
+@api_app.get("/formats")
 def formats() -> dict:
     # 能力数据：支持扩展名清单，前端上传预检与格式提示行共用（改格式不改前端）
     return {"formats": sorted(_SUPPORTED)}
 
 
-@api.post("/tasks", status_code=202)
-async def create_task(file: UploadFile, output: str = Form("url,text")) -> TaskCreated:
+@api_app.post("/tasks", status_code=202)
+async def create_task(file: UploadFile, output: str = Form("body")) -> TaskCreated:
     filename = file.filename or ""
     suffix = Path(filename).suffix.lower()
     if suffix not in _SUPPORTED:
@@ -110,30 +98,36 @@ async def create_task(file: UploadFile, output: str = Form("url,text")) -> TaskC
     declared = file.size or 0
     if declared > MAX_UPLOAD_BYTES:
         raise HTTPException(
-            400, f"文件超出大小上限（≤ {MAX_UPLOAD_BYTES // 1024 // 1024}MB）。"
+            400, f"文件超出大小上限（≤ {MAX_UPLOAD_BYTES // 1024 // 1024}MB）。请压缩或拆分后重试。"
         )
-    # 边读边写盘：不把请求体聚合进内存，内存占用与上传大小无关
+    # 边读边写盘：不把请求体聚合进内存，内存占用与上传大小无关。
+    # 读循环包 finally：客户端中途断开（read 抛错）时也清理临时文件，
+    # 不等重启清扫兜底
     tmp_path = Path(tempfile.gettempdir()) / f"omnimd-demo-{uuid.uuid4().hex}{suffix}"
     received = 0
     oversize = False
-    with tmp_path.open("wb") as out:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            received += len(chunk)
-            if received > MAX_UPLOAD_BYTES:
-                oversize = True
-                break
-            out.write(chunk)
+    try:
+        with tmp_path.open("wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                received += len(chunk)
+                if received > MAX_UPLOAD_BYTES:
+                    oversize = True
+                    break
+                out.write(chunk)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
     if oversize:
         tmp_path.unlink(missing_ok=True)
         raise HTTPException(
-            400, f"文件超出大小上限（≤ {MAX_UPLOAD_BYTES // 1024 // 1024}MB）。"
+            400, f"文件超出大小上限（≤ {MAX_UPLOAD_BYTES // 1024 // 1024}MB）。请压缩或拆分后重试。"
         )
     if not received:
         tmp_path.unlink(missing_ok=True)
-        raise HTTPException(400, "文件为空，无法转换。")
+        raise HTTPException(400, "文件为空，无法转换。请检查文件内容后重新上传。")
 
     try:
         task_id = tasks.create_task(filename, received, tmp_path, output)
@@ -147,14 +141,14 @@ async def create_task(file: UploadFile, output: str = Form("url,text")) -> TaskC
     return TaskCreated(task_id=task_id, filename=filename)
 
 
-@api.get("/tasks")
+@api_app.get("/tasks")
 def list_tasks(q: str = "", limit: int = 20, offset: int = 0) -> dict:
     limit = max(1, min(limit, 100))
     rows, total = tasks.list_tasks(q=q, limit=limit, offset=offset)
     return {"items": [_summary(r) for r in rows], "total": total}
 
 
-@api.get("/tasks/{task_id}")
+@api_app.get("/tasks/{task_id}")
 def get_task(task_id: str) -> TaskDetail:
     row = tasks.get_task(task_id)
     if row is None:
@@ -171,13 +165,33 @@ def get_task(task_id: str) -> TaskDetail:
     return detail
 
 
-@api.delete("/tasks/{task_id}", status_code=204)
+@api_app.delete("/tasks/{task_id}", status_code=204)
 def delete_task(task_id: str):
     if not tasks.delete_task(task_id):
         raise HTTPException(404, "任务不存在。")
 
 
-app.include_router(api, prefix="/api")
+# 主应用：只有两个挂载（/api 子应用 + / 静态），无自身路由——
+# docs 关闭避免空文档页；API 文档见子应用的 /api/docs
+app = FastAPI(title="omnimd demo", lifespan=lifespan,
+              docs_url=None, redoc_url=None, openapi_url=None)
+
+# 前端构建产物由本服务托管（同源）。跨源读写经 CORS_ORIGINS 收口：
+# 缺省放行本机回环（浏览器里从其他源调用 demo API 的常用形态），
+# 多个来源用逗号分隔；设为 * 才全放开（明示选择宽面）
+_origins = os.getenv("CORS_ORIGINS", "http://localhost:8300,http://127.0.0.1:8300")
+if _origins.strip() == "*":
+    _allow_origins: list[str] | str = "*"
+else:
+    _allow_origins = [o.strip() for o in _origins.split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allow_origins,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["*"],
+)
+
+app.mount("/api", api_app)
 
 
 class SPAStaticFiles(StaticFiles):

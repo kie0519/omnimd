@@ -71,13 +71,17 @@ export async function deleteTask(
   taskId: string,
   signal?: AbortSignal
 ): Promise<void> {
-  // DELETE 204 无响应体，与 request 同逻辑但不解析 JSON
+  // DELETE 204 无响应体，与 request 同逻辑但不解析 JSON；
+  // 5xx 同样归一 NetworkError——删除失败与其它请求共享离线横幅
   let resp: Response;
   try {
     resp = await fetch(`${BASE}/api/tasks/${taskId}`, { method: "DELETE", signal });
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") throw e;
     throw new NetworkError("服务连接中断");
+  }
+  if (resp.status >= 500) {
+    throw new NetworkError(`服务异常（${resp.status}）`);
   }
   if (!resp.ok) {
     throw new Error(`删除失败（${resp.status}）`);

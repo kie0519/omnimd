@@ -48,7 +48,7 @@ class AnydocEngine(ParseEngine):
                 f"或改用 DOC_ENGINE=markitdown 重试。"
             )
         if fmt == "pdf":
-            # 路由层已保证 pdf 不进本引擎，此处兜底拒绝（to_document 不支持 pdf）
+            # to_document 不支持 pdf——不可达分支的防御性拒绝
             raise ValueError("anydoc 引擎不支持 PDF（不提取图片），PDF 走 pymupdf4llm")
         document = anydoc.to_document(data, fmt)
         markdown = _render_document(document, store)
@@ -64,11 +64,20 @@ class AnydocEngine(ParseEngine):
 
 _ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"]
 
-# 有序列表 marker 的 GFM 等价物；无映射的稀有 marker 退化为十进制
+# 有序列表 marker 的 GFM 等价物；无映射的稀有 marker 与超出字母表/
+# 罗马数字范围的序号退化为十进制
+def _alpha(fmt: str):
+    def label(n: int) -> str:
+        if 1 <= n <= 26:
+            return chr(ord(fmt) + n - 1)
+        return str(n)
+    return label
+
+
 _ORDERED_MARKERS = {
     "decimal": str, "ordered": str,
-    "lower_alpha": lambda n: chr(ord("a") + n - 1),
-    "upper_alpha": lambda n: chr(ord("A") + n - 1),
+    "lower_alpha": _alpha("a"),
+    "upper_alpha": _alpha("A"),
     "lower_roman": lambda n: _ROMAN[n - 1].lower() if n <= 10 else str(n),
     "upper_roman": lambda n: _ROMAN[n - 1] if n <= 10 else str(n),
 }
@@ -77,7 +86,8 @@ _ORDERED_MARKERS = {
 def _ordered_label(marker: str, item, index: int, start: int) -> str:
     fmt = _ORDERED_MARKERS.get(marker, str)
     if item.marker_label:
-        return f"{item.marker_label}."
+        # 源文档的显式标签：归一为单句点结尾（'3' 与 '3.' 同渲染）
+        return f"{item.marker_label.rstrip('..')}."
     return f"{fmt((start or 1) + index)}."
 
 
@@ -163,8 +173,11 @@ def _render_table(table, doc, store) -> str:
                 cells.append("")
                 continue
             cell = _render_blocks(slot.cell.blocks, doc, store)
-            # GFM 表格单元不能含块级元素：多段落以 <br> 相接，管道转义
-            cells.append(cell.replace("\n", "<br>").replace("|", "\\|").strip())
+            # GFM 表格单元不能含块级元素：多段落以单个 <br> 相接
+            # （段落分隔 \n\n 与段内单 \n 统一收敛），管道转义
+            flattened = "<br>".join(
+                seg.replace("\n", "<br>") for seg in cell.split("\n\n"))
+            cells.append(flattened.replace("|", "\\|").strip())
         lines.append(f"| {' | '.join(cells)} |")
         if row_index == 0:
             lines.append("|" + " --- |" * ncols)
@@ -176,10 +189,21 @@ def _render_note(note, doc, store) -> str:
     return f"[^{note.id}]: {body}"
 
 
+class _SpaceInline:
+    """软换行折叠出的空格段（无样式 text，可参与 run 合并）"""
+    kind = "text"
+    text = " "
+    style = None
+
+
+_SPACE = _SpaceInline()
+
+
 def _render_inlines(inlines, doc, store) -> str:
     # 段内软换行（line_break）是排版换行不是语义分段，折叠为空格——
-    # 与 Markdown 渲染器对单换行的处理一致
-    inlines = [il for il in inlines or [] if il.kind != "line_break"]
+    # 与 Markdown 渲染器对单换行的处理一致；空格以无样式 text 参与
+    # 后续 run 合并（并入相邻同样式段，不产生破碎标记）
+    inlines = [_SPACE if il.kind == "line_break" else il for il in inlines or []]
     # 相邻同样式 text 段先合并（Word 常把一句话拆成多个 run），
     # 避免 **360****AI** 这种破碎的强调标记
     merged = []

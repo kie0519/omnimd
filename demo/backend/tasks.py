@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     filename      TEXT NOT NULL,
     size_bytes    INTEGER NOT NULL,
     status        TEXT NOT NULL,
-    output        TEXT NOT NULL DEFAULT 'url,text',
+    output        TEXT NOT NULL DEFAULT 'body',  -- 产出组成（规范序 CSV）
     markdown      TEXT,
     error         TEXT,
     image_count   INTEGER,
@@ -50,7 +50,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC);
 
 
 def init_db(db_path: str) -> None:
-    """建库建表（幂等），供应用启动钩子调用"""
+    """建库建表，表已存在时跳过（可重复调用），供应用启动钩子调用"""
     global _db
     # isolation_level=None：关闭隐式事务，写路径显式 BEGIN IMMEDIATE 短事务
     _db = sqlite3.connect(db_path, check_same_thread=False, isolation_level=None)
@@ -157,7 +157,7 @@ class ConcurrencyLimitError(Exception):
     """并发任务已满（由 INSERT 的原子计数判定）"""
 
 
-def create_task(filename: str, size: int, tmp_path: Path, output: str = "url,text") -> str:
+def create_task(filename: str, size: int, tmp_path: Path, output: str = "body") -> str:
     """登记已落盘的上传文件为 pending 任务并投递工作线程，返回任务 ID。
 
     调用方负责 output 取值校验与文件落盘。并发上限判定并入同一条
@@ -206,10 +206,12 @@ def _run(task_id: str, path: Path, output: str) -> None:
     finally:
         path.unlink(missing_ok=True)   # 上传文件即用即删
 
-    # 图片文件 + 仅链接产出：单图只走注册+上传，亚秒即完成属常态，
+    # 图片文件 + 无视觉任务产出：单图只走注册+上传，亚秒即完成属常态，
     # 不参与命中判定（否则首转也显示「缓存命中」）
     is_image_input = path.suffix.lower() in IMAGE_EXTENSIONS
-    eligible = image_count > 0 and not (is_image_input and "text" not in output and "alt" not in output)
+    eligible = image_count > 0 and not (
+        is_image_input and "ocr" not in output and "alt" not in output
+    )
     cache_hit = 1 if (elapsed_ms < _CACHE_HIT_MAX_MS and eligible) else 0
     _write(
         "UPDATE tasks SET status='done', markdown=?, image_count=?, "

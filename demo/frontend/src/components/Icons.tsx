@@ -38,6 +38,26 @@ export function IcUpload({ size, className }: IconProps) {
   );
 }
 
+/** 眼睛：渲染视图（查看产出形态） */
+export function IcEye({ size, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <path d="M2.25 9s2.7-4.75 6.75-4.75S15.75 9 15.75 9 13.05 13.75 9 13.75 2.25 9 2.25 9Z" />
+      <circle cx="9" cy="9" r="2.2" />
+    </Svg>
+  );
+}
+
+/** 代码括号：源码视图（逐字对照产出） */
+export function IcCode({ size, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <path d="M6.5 4.5 3 9l3.5 4.5" />
+      <path d="M11.5 4.5 15 9l-3.5 4.5" />
+    </Svg>
+  );
+}
+
 /** 下载：托盘 + 下箭头 */
 export function IcDownload({ size, className }: IconProps) {
   return (
@@ -116,18 +136,6 @@ export function IcHelp({ size, className }: IconProps) {
       <circle cx="9" cy="9" r="6.5" />
       <path d="M6.9 6.9a2.1 2.1 0 1 1 2.9 2c-.6.3-.8.8-.8 1.4" />
       <path d="M9 12.7h.01" />
-    </Svg>
-  );
-}
-
-/** 品牌标：带折角的文档 + 向右箭头（文件 → 产出） */
-export function IcLogo({ size, className }: IconProps) {
-  return (
-    <Svg size={size} className={className}>
-      <rect x="2" y="2.5" width="8.6" height="13" rx="1.4" />
-      <path d="M7.4 2.5v3.1h3.2" />
-      <path d="M12 9.5h4" />
-      <path d="M14.2 7.3l2.2 2.2-2.2 2.2" />
     </Svg>
   );
 }

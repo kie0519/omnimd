@@ -38,12 +38,7 @@
   min-width: 0;
 }
 
-.timer {
-  font-size: var(--t-s);
-  color: var(--ink-2);
-}
-
-/* 产出组成非缺省时的形态标签（仅链接 / 仅转写） */
+/* 产出组成形态标签（仅链接 / 仅内嵌 / 链接+转写 等） */
 .compTag {
   flex: none;
   padding: 1px var(--s-2);
@@ -325,6 +320,10 @@
 .segBtn {
   position: relative;
   z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   padding: 5px 16px;
   font-size: var(--t-s);
   color: var(--ink-2);

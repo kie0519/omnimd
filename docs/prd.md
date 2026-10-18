@@ -10,9 +10,9 @@
 
 ### 1.1 是什么
 
-omnimd 是一个通用的文件转 Markdown 工具（CLI 与 Python 库两种使用面）：把文档与图片转换为「正文 + 图片链接 + 图片转写文本」三合一的 Markdown，产出的文本直接可被 LLM / coding agent / 知识库消费。文件解析是 LLM 工作流的入口环节，本工具承担这一环节。
+omnimd 是一个通用的文件转 Markdown 工具（CLI 与 Python 库两种使用面）：把文档与图片转换为 Markdown——正文必选，图片链接、base64 内嵌、转写文本、描述文本四部件按需组合，产出的文本直接可被 LLM / coding agent / 知识库消费。文件解析是 LLM 工作流的入口环节，本工具承担这一环节。
 
-产品愿景是「任意文件 → LLM 可用的 Markdown」：文档与图片已支持，音频、视频转写在规划中（[ROADMAP](../ROADMAP.md)）。
+产品愿景是「任意文件 → 信息完整的 Markdown」：文档与图片已支持，音频、视频转写在规划中（[ROADMAP](../ROADMAP.md)）。
 
 ### 1.2 不是什么
 
@@ -21,7 +21,7 @@ omnimd 是一个通用的文件转 Markdown 工具（CLI 与 Python 库两种使
 - **不做 GUI**——CLI 与 Python 库是核心使用面（Web 演示 [demo/](../demo) 与 Claude Code skill [skills/omnimd/](../skills/omnimd) 是基于库的演示/集成形态，不是独立产品）
 - **不做内容加工**——源文档内容逐字保留，不纠错、不润色、不翻译
 
-### 1.3 产品红线
+### 1.3 产品硬约束
 
 1. **无损**：除装饰性小图外，源文档的任何信息不得丢弃（违者即缺陷）。上传或转写失败的图片按 §4.2 的既定形态留痕或记日志，不属于静默丢弃
 2. **密钥不落文档**：配置唯一来源是 .env，文档与代码示例不出现真实密钥
@@ -38,7 +38,7 @@ omnimd 是一个通用的文件转 Markdown 工具（CLI 与 Python 库两种使
 **CLI 入口**：
 
 ```bash
-omnimd <文件或目录...> [-o 输出目录] [--output url,text] [--concurrency N] [--cache-dir 目录] [-v]
+omnimd <文件或目录...> [-o 输出目录] [--output body,url,ocr] [--concurrency N] [--cache-dir 目录] [-v]
 ```
 
 **Python 库入口**（安装后在自己的代码里调用）：
@@ -62,7 +62,7 @@ result = md.convert("报告.pdf", output="url")   # → ConversionResult（.mark
 | 单文件转换 | 任意受支持格式（文档或图片） |
 | 目录批处理 | 目录下所有文件按名排序转换；不支持的格式**一次报全** |
 | 文档格式 | `.pdf .docx .docm .doc .odt .ods .odp .ppt .pptx .pptm .ppsx .ppsm .rtf .epub .xlsx .xlsm .xlsb .xls .csv .html .htm .json .xml .zip .txt .md .rst .ipynb` |
-| 图片输入 | `.png .jpg .jpeg .gif .bmp .webp .tif .tiff .svg .ico`——单张图片直接作为输入，产出同文档内嵌图片一致的「链接 + 转写文本」 |
+| 图片输入 | `.png .jpg .jpeg .gif .bmp .webp .tif .tiff .svg .ico`——单张图片直接作为输入，产出形态与文档内嵌图片一致（按产出组成渲染） |
 
 ### 3.2 解析引擎（非 PDF 格式）
 
@@ -70,13 +70,13 @@ result = md.convert("报告.pdf", output="url")   # → ConversionResult（.mark
 |---|---|
 | 引擎选择 | `DOC_ENGINE` 配置：`markitdown`（缺省，支持的格式最多）/ `anydoc`（正文质量优先——合并单元格/公式/脚注保真更好） |
 | 格式回退 | 所选引擎不支持的格式自动回退另一引擎，支持的格式取并集 |
-| PDF 固定路线 | PDF 不受 DOC_ENGINE 影响，固定走 pymupdf4llm——markitdown 与 anydoc 的 PDF 转换都丢失全部内嵌图片，没有选择余地 |
+| PDF 固定路线 | PDF 不受 DOC_ENGINE 影响，固定走图片保真管线 |
 
 ### 3.3 图片处理
 
 | 功能 | 说明 |
 |---|---|
-| 产出组成 | 每次转换可选（`url` / `text` / `alt` 逗号分隔多选，`alt` 依赖 `url`）：`url` 保留图片公开链接；`text` 附加转写文本；`alt` 生成链接的描述文本（`text`/`alt` 需调用视觉模型，产生调用成本）；未设置时取 `url,text` |
+| 产出组成 | 每次转换可选（`body` / `url` / `base64` / `ocr` / `alt` 逗号分隔多选）：`body` 正文（必选锚点，省略自动包含）；`url` 图片公开链接；`base64` 图片内嵌（与 url 互斥）；`ocr` 转写文本；`alt` 描述文本（`ocr`/`alt` 依赖 url 或 base64，需调用视觉模型（产生模型费用））；未设置时取 `body`（纯解析，不调用模型、不依赖存储） |
 | 装饰图过滤 | 短边 < 60px 的图标/分隔线直接丢弃，不产生占位符 |
 | 内容去重 | 相同图片（SHA-256 相同）只上传、转写一次，多处引用同一 URL |
 | 图片托管 | 上传至配置的存储后端换取长期公开 URL |
@@ -88,7 +88,7 @@ result = md.convert("报告.pdf", output="url")   # → ConversionResult（.mark
 |---|---|
 | 转写缓存 | 转写结果持久化；同一 VLM 下重跑不再调用模型 |
 | URL 缓存 | 上传结果持久化；同一存储（端点与桶）下重跑不再上传 |
-| 隔离切换 | 缓存按思考控制方式/模型/传图方式/提示词隔离——换模型、换思考控制方式、换传图方式或改提示词都强制重新转写（便于评估新配置），换存储（端点/桶）强制重新上传 |
+| 隔离切换 | 缓存按思考控制方式/模型/提示词隔离——换模型、换思考控制方式或改提示词都强制重新转写（便于评估新配置），换存储（端点/桶）强制重新上传 |
 
 ### 3.5 端点与引擎切换
 
@@ -110,23 +110,32 @@ result = md.convert("报告.pdf", output="url")   # → ConversionResult（.mark
 
 ### 4.2 图片块形态
 
-产出组成决定每张图片的渲染：`url` 渲染图片链接，`text` 在链接下方附完整转写文本块，`alt` 把一句话描述写进链接的描述位（alt 位，依赖 url）。全选时：
+产出组成决定每张图片的渲染：`body` 为必选锚点（省略时自动包含）；`url` 渲染图片公开链接，`base64` 渲染 base64 内嵌（与 url 互斥）；`ocr` 在链接/内嵌下方附完整转写文本块，`alt` 把一句话描述写进链接的描述位（均依赖 url 或 base64）。全选时：
 
 ```markdown
 ![图片的一句话描述](https://<存储域名>/<桶名>/<前缀><sha256>.png)
 {视觉模型输出的完整 Markdown 文本}
 ```
 
+或 base64 内嵌形态：
+
+```markdown
+![图片的一句话描述](data:image/png;base64,...)
+{视觉模型输出的完整 Markdown 文本}
+```
+
 - 图片 URL 长期有效、匿名可访问、无过期时间
-- 转写失败的图片：URL 正常输出，文本位置写「（图片转写失败）」，不中断整批
+- 转写失败的图片：URL/内嵌正常输出，文本位置写「（图片转写失败）」，不中断整批
 - 上传失败的图片：整个图片块从产出中删除，失败记入日志，不中断整批
 - 装饰性图片：整个图片块消失，不留占位
+- 纯解析（仅 `body`）：图片块从产出中移除，不调用模型、不依赖存储
 
 ## 五、配置体验
 
 - **连接配置只认 .env**：VLM 与存储的全部连接配置只认 .env / 环境变量——CLI 不提供凭据传参；Python 库可显式传连接配置（覆盖环境值）
-- **凭据无默认值**：凭据变量（KEY/URL/MODEL）缺失时报错并列出全部缺失项；存储按需必填——产出组成含图片链接、或转写走 URL 传图（缺省）时才要求存储；`VLM_IMAGE_INPUT=base64` 时纯转写可不配存储运行
+- **凭据无默认值**：凭据变量（KEY/URL/MODEL）缺失时报错并列出全部缺失项；存储按需必填——产出组成含 `url` 部件时才要求存储；`base64` 内嵌或纯解析（仅 `body`）运行不需要存储
 - **端点切换整体一致**：凭据三项（key/url/model）随端点整体更换，CLI 不提供单独覆盖凭据的参数；VLM_THINKING 是思考控制方式（缺省 none 不发参数），不是凭据
+- **取图方式无配置**：转写时图怎么给视觉模型由产出组成推导（含 url 部件传公开 URL，否则传 base64 直送）——本地端点（Ollama 等）不含 url 部件即可用；端点不支持 URL 传图且产出含 url 部件时报错，指引换部件或换端点
 
 配置项速查见 [.env.example](../.env.example)，完整说明见根 [README.md](../README.md)。
 
@@ -134,7 +143,7 @@ result = md.convert("报告.pdf", output="url")   # → ConversionResult（.mark
 
 | # | 标准 | 判定方式 |
 |---|---|---|
-| 1 | 每张非装饰图片 = 可显示链接 + 转写文本（缺省产出组成 `url,text`） | 抽查产出 Markdown |
+| 1 | 每张非装饰图片按产出组成呈现：链接可显示、转写文本可检索（`body,url,ocr` 组合） | 抽查产出 Markdown |
 | 2 | 转写失败的图片按 §4.2 形态留痕且不中断整批（成功率取决于外部视觉模型，不作验收项） | 抽查产出：失败提示与图片链接并存 |
 | 3 | 图片 URL 匿名 GET 返回 200 | 浏览器无痕窗口打开抽查 |
 | 4 | 重跑同一文档，API 调用次数为 0 | `-v` 调试日志中无 HTTP 请求记录 |

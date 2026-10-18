@@ -15,7 +15,8 @@ import re
 
 from .base import ParseEngine
 
-# pymupdf4llm 会输出冗余的 picture-text 标记，正文中由转写文本取代
+# pymupdf4llm 自带的 picture-text 冗余标记整体移除；
+# 图片内容由渲染阶段按产出组成回填
 _PICTURE_TEXT_PATTERN = re.compile(
     r"\*\*----- Start of picture text -----<br>\|?.*?"
     r"\*\*----- End of picture text -----<br>",

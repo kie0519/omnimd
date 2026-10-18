@@ -2,7 +2,7 @@
 import pytest
 
 from omnimd.cli import main
-from conftest import REQUIRED_ENV
+from tests.helpers import REQUIRED_ENV
 
 
 @pytest.fixture()

@@ -6,7 +6,8 @@
 VLM 层只实现 OpenAI 兼容协议，端点由凭据三项
 （VLM_API_KEY / VLM_BASE_URL / VLM_MODEL）直接指定；思考参数的
 下发方式由 VLM_THINKING 配置（缺省 none = 不发思考参数，取值表见
-vlm/thinking.py）。
+vlm/thinking.py）。VLM 取图方式无配置项——由产出组成推导（含 url
+部件传公开 URL，否则传 base64），见 converter。
 
 校验分工：
 - 本模块只校验归自己管的项——必填变量是否齐全、运行参数取值是否合法
@@ -14,9 +15,9 @@ vlm/thinking.py）。
   不在此重复定义）
 - 后端专属变量（S3_*）由存储工厂按后端自己的声明校验
   （见 storage/base.py 的 REQUIRED_ENV_VARS）
-- 存储配置按需必填：产出组成含 url（图片公开链接）、或 URL 传图
-  模式下的视觉任务需要上传时必须有存储，由 converter 在 convert 处
-  校验并给出指引；base64 直传且仅要转写文本时不依赖存储
+- 存储配置按需必填：产出组成含 url（图片公开链接）时必须有存储，
+  由 converter 在 convert 处校验并给出指引；不含 url 部件时存储
+  不校验、不上传
 """
 import os
 from pathlib import Path
@@ -44,33 +45,46 @@ def default_cache_dir() -> Path:
     return Path(user_cache_dir("omnimd", appauthor=False))
 
 
+_OUTPUT_VALUES = ("body", "url", "base64", "ocr", "alt")
+
+
 def parse_output(raw: str | None) -> str:
     """校验并归一化产出组成（OUTPUT 环境变量与 output 参数共用）。
 
-    逗号分隔多选 {url, text, alt}：顺序不敏感、自动去重、容忍空白；
-    未设置时取 url,text。alt 依赖 url（它是图片链接的描述文本）。
-    返回按 url,text,alt 固定顺序的 CSV，非法取值直接报 ConfigError。
+    逗号分隔多选 {body, url, base64, ocr, alt}：顺序不敏感、自动去重、
+    容忍空白；未设置时取 body（纯解析）。body 是必选锚点（省略时自动
+    包含）；url 与 base64 互斥；ocr/alt 依赖 url 或 base64。
+    返回按 body,url,base64,ocr,alt 固定顺序的 CSV，非法取值直接报
+    ConfigError。
     """
     raw = (raw or "").strip()
     if not raw:
-        return "url,text"
+        return "body"
     parts: list[str] = []
     for piece in raw.split(","):
         part = piece.strip()
         if not part:
             raise ConfigError("OUTPUT 含空取值（连续逗号或纯空白）")
-        if part not in ("url", "text", "alt"):
+        if part not in _OUTPUT_VALUES:
             raise ConfigError(
-                f"不支持的 OUTPUT 取值：{part}（可选：url, text, alt，逗号分隔多选）"
+                f"不支持的 OUTPUT 取值：{part}"
+                f"（可选：{', '.join(_OUTPUT_VALUES)}，逗号分隔多选）"
             )
         if part not in parts:
             parts.append(part)
-    if "alt" in parts and "url" not in parts:
+    if "body" not in parts:
+        parts.insert(0, "body")
+    if "url" in parts and "base64" in parts:
         raise ConfigError(
-            "OUTPUT 的 alt 依赖 url（alt 是图片链接的描述文本），"
-            "请同时选择 url（如 OUTPUT=url,alt）"
+            "OUTPUT 的 url 与 base64 互斥（图片只能有一种呈现方式），"
+            "请只选其一"
         )
-    parts.sort(key=("url", "text", "alt").index)
+    if ("ocr" in parts or "alt" in parts) and "url" not in parts and "base64" not in parts:
+        raise ConfigError(
+            "OUTPUT 的 ocr/alt 依赖 url 或 base64（图片内容需有呈现载体），"
+            "请同时选择其一（如 OUTPUT=body,base64,ocr）"
+        )
+    parts.sort(key=_OUTPUT_VALUES.index)
     return ",".join(parts)
 
 
@@ -95,44 +109,28 @@ class Config:
     # ----- 运行参数 -----
     vlm_max_tokens: int = 8192     # 单图转写输出上限
     vlm_concurrency: int = 8       # 转写并发数
-    # 图片传入 VLM 的方式：url（公开链接）/ base64（直传，产出可不含链接）
-    vlm_image_input: str = "url"
     # 思考控制方式，取值表见 vlm/thinking.py
     vlm_thinking: str = "none"
     cache_dir: Path = field(default_factory=default_cache_dir)
     min_image_dimension: int = 60  # 短边低于该像素数视为装饰性图片，直接丢弃
-    # 产出组成：url = 图片公开链接；text = 图片转写文本；alt = 链接的描述文本（依赖 url）
-    output: str = "url,text"
+    # 产出组成：body=正文（必选锚点）；url=图片公开链接；base64=图片内嵌
+    # （与 url 互斥）；ocr=转写文本；alt=描述文本（ocr/alt 依赖 url 或 base64）
+    output: str = "body"
     # 非 PDF 格式的解析引擎：markitdown（支持的格式最多）/ anydoc（正文质量优先）
     doc_engine: str = "markitdown"
 
     def validate(self) -> None:
-        missing = [
-            name for name, val in [
-                ("VLM_API_KEY", self.vlm_api_key),
-                ("VLM_BASE_URL", self.vlm_base_url),
-                ("VLM_MODEL", self.vlm_model),
-            ] if not val
-        ]
-        if missing:
-            raise ConfigError(
-                f"缺少凭据: {', '.join(missing)}。"
-                f"请检查项目根 .env、环境变量或显式传入的配置对象。"
-            )
-        # 存储配置按需必填：产出含 url 或 URL 传图转写时需要；
-        # base64 直传且仅转写文本时不依赖存储，
-        # 产出含图片链接时的检查在 convert 处给出带指引的报错
+        """构造期校验运行参数（产出组成、取值域、数值类型）。
+
+        连接凭据不在此处校验——按消费方惰性校验（缺凭据即报错、不做
+        静默回退）：VLM 凭据三项在首次转写/描述时（validate_vlm），
+        存储配置在产出含 url 部件时（converter.uploader）。纯解析
+        （output=body）不需要任何凭据。
+        """
         parse_output(self.output)
         if self.vlm_max_tokens < 1:
             raise ConfigError(
                 f"VLM_MAX_TOKENS 需要正整数，当前值: {self.vlm_max_tokens}"
-            )
-        from urllib.parse import urlparse
-        parsed = urlparse(self.vlm_base_url)
-        if not parsed.scheme or not parsed.netloc:
-            raise ConfigError(
-                f"VLM_BASE_URL 需要完整 URL（含协议头，如 https://api.example.com/v1），"
-                f"当前值: {self.vlm_base_url!r}"
             )
         if self.storage_provider:
             from .storage import _PROVIDERS
@@ -150,14 +148,38 @@ class Config:
             raise ConfigError(
                 f"VLM_CONCURRENCY 需要正整数，当前值: {self.vlm_concurrency}"
             )
-        if self.vlm_image_input not in ("url", "base64"):
-            raise ConfigError(
-                f"不支持的 VLM_IMAGE_INPUT：{self.vlm_image_input}（可选：url, base64）"
-            )
         if self.doc_engine not in DOC_ENGINES:
             raise ConfigError(
                 f"不支持的 DOC_ENGINE: {self.doc_engine}"
                 f"（可选：{', '.join(sorted(DOC_ENGINES))}）"
+            )
+
+    def validate_vlm(self) -> None:
+        """VLM 连接凭据校验——首次转写/描述时调用（消费方惰性校验）。
+
+        缺凭据即报错并列出全部缺失项；base_url 的完整 URL 校验同属
+        连接面，一并在此。
+        """
+        missing = [
+            name for name, val in [
+                ("VLM_API_KEY", self.vlm_api_key),
+                ("VLM_BASE_URL", self.vlm_base_url),
+                ("VLM_MODEL", self.vlm_model),
+            ] if not val
+        ]
+        if missing:
+            raise ConfigError(
+                f"本次转换需要视觉模型（产出含 ocr/alt 部件），缺少凭据: "
+                f"{', '.join(missing)}。请在 .env 中配置凭据三项"
+                "（VLM_API_KEY / VLM_BASE_URL / VLM_MODEL），"
+                "或仅产出正文/图片部件（output 不含 ocr、alt）。"
+            )
+        from urllib.parse import urlparse
+        parsed = urlparse(self.vlm_base_url)
+        if not parsed.scheme or not parsed.netloc:
+            raise ConfigError(
+                f"VLM_BASE_URL 需要完整 URL（含协议头，如 https://api.example.com/v1），"
+                f"当前值: {self.vlm_base_url!r}"
             )
 
 
@@ -192,7 +214,6 @@ def load(concurrency: int | None = None, cache_dir: str | None = None,
         vlm_max_tokens=env_int("VLM_MAX_TOKENS", 8192),
         vlm_concurrency=(concurrency if concurrency is not None
                         else env_int("VLM_CONCURRENCY", 8)),
-        vlm_image_input=env("VLM_IMAGE_INPUT") or "url",
         vlm_thinking=env("VLM_THINKING") or "none",
         storage_provider=env("STORAGE_PROVIDER"),
         s3_endpoint_url=env("S3_ENDPOINT_URL"),

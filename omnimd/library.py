@@ -133,8 +133,9 @@ class OmniMD:
     def convert(self, file_path: str | Path, *, output: str | None = None) -> ConversionResult:
         """转换单个文件，返回 ConversionResult（.markdown 为产出全文）。
 
-        output 是本次转换的产出组成（逗号分隔多选 url/text/alt，
-        alt 依赖 url；缺省取配置的 OUTPUT）。
+        output 是本次转换的产出组成（逗号分隔多选 body/url/base64/
+        ocr/alt；body 必选锚点省略自动包含，url 与 base64 互斥，
+        ocr/alt 依赖其一；缺省取配置的 OUTPUT，未设置为 body 纯解析）。
         """
         return self._converter.convert(Path(file_path), output=output)
 
@@ -159,8 +160,9 @@ class OmniMD:
                 files.extend(sorted(f for f in path.iterdir() if f.is_file()))
             else:
                 files.append(path)
-        # 键用绝对路径：dir 与 ./dir、大小写变体不产生重复条目
-        files = [f.resolve() for f in files]
+        # 键用绝对路径：dir 与 ./dir、大小写变体不产生重复条目；
+        # 同一路径重复出现（文件 + 其所在目录混传）去重，只转换一次
+        files = list(dict.fromkeys(f.resolve() for f in files))
         results: dict[str, ConversionResult | Exception] = {}
 
         def run(file_path: Path):

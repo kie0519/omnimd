@@ -4,11 +4,12 @@
 1. 尺寸过滤——短边 < min_dimension 的图片视为装饰性元素，直接丢弃
 2. SHA-256 内容去重——相同图片只保留第一份，其余位置引用同一 URL
 3. 视觉产物缓存——转写与 alt 按
-   {thinking}--{model}--{input}--{kind}--{prompt_digest}/{sha}.{kind}.md 落盘：
-   按思考控制方式、模型、传图方式与任务提示词摘要隔离，换配置或改提示词
-   强制重新生成，同配置重跑不调模型
-4. URL 缓存——上传结果按 {provider}--{端点与桶的摘要}/{sha256}.url 落盘：
-   按存储端点与桶隔离，换桶/换端点自然重新上传，重跑不重复上传
+   {thinking}--{model}--{kind}--{prompt_digest}/{sha}.{kind}.md 落盘：
+   按思考控制方式、模型与任务提示词摘要隔离，换配置或改提示词
+   强制重新生成，同配置重跑不调模型（VLM 对同一张图的转写不因
+   URL 还是 base64 传入而不同，取图方式不进缓存键）
+4. URL 缓存——上传结果按 {provider}--{端点与桶与前缀的摘要}/{sha256}.url 落盘：
+   按存储端点、桶与对象前缀隔离，换任意一项自然重新上传，重跑不重复上传
 5. 上传走可插拔存储后端，换后端只改配置
 """
 import base64
@@ -56,7 +57,7 @@ class ImageAsset:
         self.alt_text: str = ""       # VLM alt 文本
 
     def data_uri(self) -> str:
-        """图片字节的 base64 data URI 形态（VLM_IMAGE_INPUT=base64 时传给 VLM）。
+        """图片字节的 base64 data URI 形态（base64 部件渲染与传图用）。
 
         MIME 统一按 png 声明（与上传侧 {sha256}.png 命名保持一致）——多数
         端点按字节嗅探实际格式，严格校验 MIME 的端点不在支持范围。
@@ -86,26 +87,26 @@ class ImageAssetStore:
     def __init__(self, config: Config, cache_dir: Path, uploader: StorageUploader | None):
         self.config = config
         self._by_hash: dict[str, ImageAsset] = {}
-        # uploader 允许为 None（本次转换不需要上传：产出不含 url 或 base64 直传）
+        # uploader 允许为 None（本次转换不需要上传：产出不含 url 部件）
         self._uploader = uploader
-        # 视觉产物缓存按「思考控制方式+模型+传图方式+任务提示词摘要」隔离：
-        # 提示词是转写结果的决定因素，进缓存键使提示词迭代可复现
+        # 视觉产物缓存按「思考控制方式+模型+任务提示词摘要」隔离：
+        # 提示词是转写结果的决定因素，进缓存键使提示词迭代可复现。
+        # 目录惰性创建（首次读写时建）——纯解析等无缓存需求的转换
+        # 不在缓存目录留下空壳，也不要求缓存目录可写
         self._prompt_dirs = {
             kind: cache_dir / "ocr" / _slug(
                 f"{config.vlm_thinking}--{config.vlm_model}"
-                f"--{config.vlm_image_input}--{kind}--{_prompt_digest(kind)}"
+                f"--{kind}--{_prompt_digest(kind)}"
             )
             for kind in ("ocr", "alt")
         }
-        for path in self._prompt_dirs.values():
-            path.mkdir(parents=True, exist_ok=True)
-        # URL 缓存按「存储端点+桶」隔离：换桶或换端点后强制重新上传，
-        # 旧桶的 URL 不污染新桶的产出
+        # URL 缓存按「存储端点+桶+前缀」隔离：换桶/端点/前缀后强制重新
+        # 上传，旧位置的 URL 不污染新位置的产出
         _dest = hashlib.sha1(
-            f"{config.s3_endpoint_url}/{config.s3_bucket}".encode()
+            f"{config.s3_endpoint_url}/{config.s3_bucket}"
+            f"/{config.s3_key_prefix}".encode()
         ).hexdigest()[:16]
         self._url_cache_dir = cache_dir / "urls" / f"{config.storage_provider or 'none'}--{_dest}"
-        self._url_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def register(self, source: str, data: bytes) -> ImageAsset | None:
         """注册一张图片。返回去重后的资产对象；装饰性图片返回 None（直接丢弃）"""
@@ -131,6 +132,7 @@ class ImageAssetStore:
         return None
 
     def save_cached_text(self, sha256: str, kind: str, text: str) -> None:
+        self._prompt_dirs[kind].mkdir(parents=True, exist_ok=True)
         self._atomic_write(self._prompt_dirs[kind] / f"{sha256}.{kind}.md", text)
 
     @staticmethod
@@ -170,6 +172,7 @@ class ImageAssetStore:
         return None
 
     def _write_cached_url(self, sha256: str, url: str) -> None:
+        self._url_cache_dir.mkdir(parents=True, exist_ok=True)
         self._atomic_write(self._url_cache_dir / f"{sha256}.url", url)
 
     def all_assets(self) -> list[ImageAsset]:

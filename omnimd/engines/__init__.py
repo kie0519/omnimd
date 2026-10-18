@@ -29,7 +29,7 @@ class EngineSpec:
         return getattr(import_module(self.module), self.cls)
 
 
-# 图片输入扩展名（固定路由自用；demo 等下游消费同一份，不另抄清单）
+# 图片输入扩展名（固定路由自用）
 IMAGE_EXTENSIONS = frozenset({
     ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp",
     ".tif", ".tiff", ".svg", ".ico",

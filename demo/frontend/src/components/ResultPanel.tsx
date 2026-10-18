@@ -3,7 +3,7 @@ import type { TaskDetail } from "../types";
 import { formatElapsed, formatNumber, formatSize } from "../format";
 import StatusBadge from "./StatusBadge";
 import MarkdownView from "./MarkdownView";
-import { FileIcon, IcDownload, IcCopy, IcCheck } from "./Icons";
+import { FileIcon, IcDownload, IcCopy, IcCheck, IcEye, IcCode } from "./Icons";
 import s from "./ResultPanel.module.css";
 
 interface Props {
@@ -87,14 +87,10 @@ export default function ResultPanel({ task, loading, view, onViewChange }: Props
           <FileIcon name={task.filename} size={18} />
         </span>
         <h1 className={s.title} title={task.filename}>{task.filename}</h1>
-        {task.output === "url" && <span className={s.compTag}>仅链接</span>}
-        {task.output === "text" && <span className={s.compTag}>仅转写</span>}
+        {outputLabel(task.output).map((label) => (
+          <span key={label} className={s.compTag}>{label}</span>
+        ))}
         <StatusBadge status={task.status} />
-        {task.status === "running" && (
-          <span className={s.timer}>
-            <LiveSeconds createdAt={task.created_at} />s
-          </span>
-        )}
         {task.status === "done" && <MetadataBand task={task} />}
       </header>
 
@@ -138,7 +134,8 @@ export default function ResultPanel({ task, loading, view, onViewChange }: Props
               className={`${s.segBtn} ${view === "rendered" ? s.segActive : ""}`}
               onClick={() => handleViewChange("rendered")}
             >
-              渲染视图
+              <IcEye size={14} />
+              渲染
             </button>
             <button
               type="button"
@@ -147,6 +144,7 @@ export default function ResultPanel({ task, loading, view, onViewChange }: Props
               className={`${s.segBtn} ${view === "source" ? s.segActive : ""}`}
               onClick={() => handleViewChange("source")}
             >
+              <IcCode size={14} />
               源码
             </button>
           </div>
@@ -160,7 +158,24 @@ export default function ResultPanel({ task, loading, view, onViewChange }: Props
   );
 }
 
-/** 完成态统计：标题条右端的紧凑元数据行（图片/字符/耗时/大小 + 缓存命中） */
+/** 产出组成形态标签：非缺省（纯解析 body）且非全形态（body,url,ocr,alt）
+ *  时显示组合概要。output 是后端规范序 CSV；纯解析是缺省态不标（图片数
+ *  为 0 已可区分），全形态不标（完整产出无需标注） */
+function outputLabel(output: string): string[] {
+  const parts = output.split(",");
+  if (parts.length <= 2) {
+    // body 单独（缺省）或 body+单一呈现部件
+    if (parts.includes("url")) return ["仅链接"];
+    if (parts.includes("base64")) return ["仅内嵌"];
+    return [];
+  }
+  if (parts.includes("ocr") && parts.includes("alt")) return [];  // 全形态（含内容双选）
+  const presentation = parts.includes("url") ? "链接" : "内嵌";
+  const content = parts.includes("ocr") ? "转写" : "描述";
+  return [`${presentation}+${content}`];
+}
+
+/** 完成态统计：标题条右端的紧凑元数据行（图片/字符/耗时/大小 + 转写复用标识） */
 function MetadataBand({ task }: { task: TaskDetail }) {
   return (
     <span className={s.meta}>
@@ -180,7 +195,7 @@ function MetadataBand({ task }: { task: TaskDetail }) {
         <span className={s.metaValue}>{formatSize(task.size_bytes)}</span>
         <span className={s.metaLabel}>大小</span>
       </span>
-      {task.cache_hit && <span className={s.cacheBadge}>⚡ 缓存命中</span>}
+      {task.cache_hit && <span className={s.cacheBadge}>⚡ 之前转过，直接复用</span>}
     </span>
   );
 }

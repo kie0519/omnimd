@@ -17,13 +17,13 @@ import {
   NetworkError,
   uploadTask,
 } from "./api";
-import { localNowIso } from "./format";
+import { localNowIso, MAX_CONCURRENT_TASKS } from "./format";
 import Sidebar from "./components/Sidebar";
 import UploadZone from "./components/UploadZone";
 import ResultPanel from "./components/ResultPanel";
 import OfflineBanner from "./components/OfflineBanner";
 import HelpPanel from "./components/HelpPanel";
-import { IcMenu, IcLogo, IcHelp } from "./components/Icons";
+import { IcMenu, IcHelp } from "./components/Icons";
 import s from "./App.module.css";
 
 type View = "rendered" | "source";
@@ -34,9 +34,7 @@ interface QueuedFile {
   output: string;
 }
 
-/** 同时进行任务上限（与后端 tasks.MAX_CONCURRENT 同值；前端用于槽位感知
- *  提交，偏差由 429 兜底纠正，不影响正确性） */
-const MAX_ACTIVE = 3;
+
 
 /** 视图模式本地记忆键（hash 缺省时的回退偏好） */
 const VIEW_STORAGE_KEY = "omnimd.view";
@@ -59,6 +57,8 @@ function writeHash(t: string | null, v: View) {
 
 export default function App() {
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
+  /** 首次列表拉取完成标志：侧栏空态在完成前不显示（防「记录丢了」误读） */
+  const [listLoaded, setListLoaded] = useState(false);
   /** 搜索命中的真实总数（列表只取前 50，计数不能拿截断长度充数） */
   const [total, setTotal] = useState(0);
   // 初始选中直接从 hash 取：避免挂载效果顺序造成的 URL 瞬时清写
@@ -98,6 +98,7 @@ export default function App() {
       if (seq !== listSeq.current) return;   // 已有更新请求，本次作废
       setTasks(data.items);
       setTotal(data.total);
+      setListLoaded(true);
       setOffline(false);
     } catch (e) {
       if (e instanceof NetworkError && seq === listSeq.current) setOffline(true);
@@ -245,7 +246,17 @@ export default function App() {
         cache.current.set(selectedId, d);
         setDetail(d);
       } catch (e) {
-        if (e instanceof NetworkError) setOffline(true);
+        if (e instanceof NetworkError) {
+          setOffline(true);
+        } else if (!(e instanceof DOMException && e.name === "AbortError")) {
+          // 404 等：任务已被删除（如另一端操作），停止轮询并同步清理
+          // 选中态与列表行——与首次取详情的清理路径同一处理
+          const failedId = selectedId;
+          setSelectedId(null);
+          setDetail(null);
+          setTasks((ts) => ts.filter((t) => t.task_id !== failedId));
+          cache.current.delete(failedId);
+        }
       }
     }, 2000);
     return () => {
@@ -323,12 +334,13 @@ export default function App() {
   const uploadQueue = useRef<QueuedFile[]>([]);
   const inFlight = useRef(0);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadRejections, setUploadRejections] = useState<string[]>([]);
 
   const flushQueue = useCallback(() => {
     const active = tasks.filter(
       (t) => t.status === "pending" || t.status === "running"
     ).length;
-    let slots = MAX_ACTIVE - active - inFlight.current;
+    let slots = MAX_CONCURRENT_TASKS - active - inFlight.current;
     while (slots > 0 && uploadQueue.current.length > 0) {
       slots -= 1;
       const item = uploadQueue.current.shift()!;
@@ -339,10 +351,14 @@ export default function App() {
         )
         .catch((e) => {
           // 网络故障与 429（并发已满）回队首，随下轮轮询重试；
-          // 其余失败（后端拒格式/大小等，预检已拦绝大多数）放弃该文件
+          // 其余失败（后端拒格式/大小等）放弃该文件并告知用户，
+          // 不允许文件悄悄消失
           if (e instanceof NetworkError) setOffline(true);
           if (e instanceof NetworkError || (e as { status?: number }).status === 429) {
             uploadQueue.current.unshift(item);
+          } else {
+            const reason = e instanceof Error ? e.message : "上传失败";
+            setUploadRejections((rs) => [...rs, `${item.file.name}：${reason}`]);
           }
         })
         .finally(() => {
@@ -391,10 +407,10 @@ export default function App() {
 
   return (
     <div className={s.shell}>
-      <OfflineBanner show={offline} />
       <Sidebar
         tasks={tasks}
         total={total}
+        loaded={listLoaded}
         selectedId={selectedId}
         value={searchText}
         onValueChange={setSearchText}
@@ -412,6 +428,7 @@ export default function App() {
         formats={formats}
       />
       <main className={s.main}>
+        <OfflineBanner show={offline} />
         {/* 窄屏顶栏：抽屉入口 + 品牌标 + 使用指南（与左栏同一套图标规范） */}
         <div className={s.topbar}>
           <button
@@ -422,9 +439,8 @@ export default function App() {
           >
             <IcMenu size={18} />
           </button>
-          <span className={s.topMark} aria-hidden="true">
-            <IcLogo size={16} />
-          </span>
+          {/* 产品 LOGO（与侧边栏品牌区、浏览器图标同源） */}
+          <img className={s.topMark} src="/logo.svg" width={20} height={20} alt="" aria-hidden="true" />
           <span className={s.topTitle}>omnimd</span>
           <button
             type="button"
@@ -436,6 +452,21 @@ export default function App() {
           </button>
         </div>
         <div className={s.work}>
+          {uploadRejections.length > 0 && (
+            <div className={s.uploadErrors} role="alert">
+              <span>以下文件未被接受：</span>
+              {uploadRejections.map((r) => (
+                <span key={r} className={s.uploadErrorItem}>{r}</span>
+              ))}
+              <button
+                type="button"
+                className={s.uploadErrorDismiss}
+                onClick={() => setUploadRejections([])}
+              >
+                知道了
+              </button>
+            </div>
+          )}
           {selectedId === null ? (
             <UploadZone
               formats={formats}

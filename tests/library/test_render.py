@@ -1,4 +1,4 @@
-"""渲染与注册纯函数回归：产出组成形态、失败路径、计数口径（不联网）"""
+"""渲染与注册纯函数回归：产出组成形态、失败路径、图片块计数（不联网）"""
 import base64
 import hashlib
 
@@ -39,8 +39,9 @@ def sha_of(data: bytes) -> str:
 
 
 def render(md, store, parts):
-    """parts 传集合——render_blocks 的契约形态"""
-    return render_blocks(md, store, set(parts))
+    """parts 传集合——render_blocks 的契约形态；计数取渲染清单长度"""
+    out, rendered = render_blocks(md, store, set(parts))
+    return out, len(rendered)
 
 
 # ---------- render_blocks：产出组成形态 ----------
@@ -48,7 +49,7 @@ def render(md, store, parts):
 def test_render_full():
     asset = make_asset()
     store = FakeStore(assets=[asset])
-    md, count = render(f"正文\n\n@@IMG:{asset.sha256}@@\n", store, {"url", "text"})
+    md, count = render(f"正文\n\n@@IMG:{asset.sha256}@@\n", store, {"body", "url", "ocr"})
     assert f"![图片]({asset.url})" in md
     assert asset.ocr_text in md
     assert count == 1
@@ -57,17 +58,36 @@ def test_render_full():
 def test_render_url_only():
     asset = make_asset()
     store = FakeStore(assets=[asset])
-    md, count = render(f"@@IMG:{asset.sha256}@@", store, {"url"})
+    md, count = render(f"@@IMG:{asset.sha256}@@", store, {"body", "url"})
     assert f"![图片]({asset.url})" in md
     assert asset.ocr_text not in md
     assert count == 1
 
 
-def test_render_text_only():
+def test_render_body_only_removes_images():
+    """纯解析：图片块移除，只留正文"""
     asset = make_asset()
     store = FakeStore(assets=[asset])
-    md, count = render(f"@@IMG:{asset.sha256}@@", store, {"text"})
-    assert "![" not in md
+    md, count = render(f"正文\n\n@@IMG:{asset.sha256}@@\n\n尾", store, {"body"})
+    assert "![" not in md and asset.ocr_text not in md
+    assert "正文" in md and "尾" in md
+    assert count == 0
+
+
+def test_render_base64_embeds_data_uri():
+    """base64 部件：图片以 data URI 内嵌产出"""
+    asset = make_asset(url="")           # 未上传——base64 不依赖 URL
+    store = FakeStore(assets=[asset])
+    md, count = render(f"@@IMG:{asset.sha256}@@", store, {"body", "base64"})
+    assert md.startswith("![图片](data:image/png;base64,")
+    assert count == 1
+
+
+def test_render_base64_ocr():
+    asset = make_asset(url="")
+    store = FakeStore(assets=[asset])
+    md, count = render(f"@@IMG:{asset.sha256}@@", store, {"body", "base64", "ocr"})
+    assert "data:image/png;base64," in md
     assert asset.ocr_text in md
     assert count == 1
 
@@ -75,16 +95,16 @@ def test_render_text_only():
 def test_render_url_alt():
     asset = make_asset(alt="架构图：三层分栏")
     store = FakeStore(assets=[asset])
-    md, count = render(f"@@IMG:{asset.sha256}@@", store, {"url", "alt"})
+    md, count = render(f"@@IMG:{asset.sha256}@@", store, {"body", "url", "alt"})
     assert f"![架构图：三层分栏]({asset.url})" in md
     assert asset.ocr_text not in md          # alt 不附带转写文本
     assert count == 1
 
 
-def test_render_url_alt_text():
+def test_render_url_alt_ocr():
     asset = make_asset(alt="季度营收图")
     store = FakeStore(assets=[asset])
-    md, count = render(f"@@IMG:{asset.sha256}@@", store, {"url", "alt", "text"})
+    md, count = render(f"@@IMG:{asset.sha256}@@", store, {"body", "url", "alt", "ocr"})
     assert f"![季度营收图]({asset.url})" in md
     assert asset.ocr_text in md
     assert count == 1
@@ -93,7 +113,7 @@ def test_render_url_alt_text():
 def test_render_alt_falls_back_when_empty():
     asset = make_asset(alt="")               # 描述失败：alt 为空回落「图片」
     store = FakeStore(assets=[asset])
-    md, _ = render(f"@@IMG:{asset.sha256}@@", store, {"url", "alt"})
+    md, _ = render(f"@@IMG:{asset.sha256}@@", store, {"body", "url", "alt"})
     assert f"![图片]({asset.url})" in md
 
 
@@ -102,7 +122,7 @@ def test_render_alt_falls_back_when_empty():
 def test_render_drops_failed_upload():
     asset = make_asset(url="")          # 上传失败：无 URL
     store = FakeStore(assets=[asset])
-    md, count = render(f"正文\n\n@@IMG:{asset.sha256}@@\n尾\n", store, {"url", "text"})
+    md, count = render(f"正文\n\n@@IMG:{asset.sha256}@@\n尾\n", store, {"body", "url", "ocr"})
     assert asset.sha256 not in md and "正文" in md and "尾" in md
     assert count == 0
 
@@ -110,13 +130,13 @@ def test_render_drops_failed_upload():
 def test_render_failed_ocr_marker():
     asset = make_asset(ocr="")          # 转写失败：占位说明
     store = FakeStore(assets=[asset])
-    md, _ = render(f"@@IMG:{asset.sha256}@@", store, {"url", "text"})
+    md, _ = render(f"@@IMG:{asset.sha256}@@", store, {"body", "url", "ocr"})
     assert "（图片转写失败）" in md
 
 
 def test_render_unknown_placeholder():
     store = FakeStore()                 # lookup 返回 None
-    md, count = render("@@IMG:" + "0" * 64 + "@@", store, {"url", "text"})
+    md, count = render("@@IMG:" + "0" * 64 + "@@", store, {"body", "url", "ocr"})
     assert md == ""
     assert count == 0
 
@@ -125,14 +145,14 @@ def test_render_counts_each_block():
     a1, a2 = make_asset(b"img-1"), make_asset(b"img-2")
     store = FakeStore(assets=[a1, a2])
     md, count = render(
-        f"@@IMG:{a1.sha256}@@\n\n@@IMG:{a2.sha256}@@", store, {"url", "text"})
+        f"@@IMG:{a1.sha256}@@\n\n@@IMG:{a2.sha256}@@", store, {"body", "url", "ocr"})
     assert count == 2
 
 
 def test_render_collapses_blank_lines():
     asset = make_asset()
     store = FakeStore(assets=[asset])
-    md, _ = render(f"@@IMG:{asset.sha256}@@\n\n\n\n尾", store, {"url", "text"})
+    md, _ = render(f"@@IMG:{asset.sha256}@@\n\n\n\n尾", store, {"body", "url", "ocr"})
     assert "\n\n\n" not in md
 
 

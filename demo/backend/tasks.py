@@ -1,6 +1,6 @@
 """任务领域层：SQLite 访问、状态机、后台执行。
 
-分层纪律：本模块不出现 HTTP 概念（请求/响应/状态码归 main.py）；
+本模块不出现 HTTP 概念（请求/响应/状态码归 main.py）；
 SQL 只出现在本模块。上传的临时文件在任务终态删除（finally 保证）。
 """
 
@@ -20,8 +20,7 @@ logger = logging.getLogger(__name__)
 # 单进程内 running+pending 达到该数即拒绝新任务（转换占用 VLM 配额）
 MAX_CONCURRENT = 3
 
-# cache_hit 判定口径：双层缓存命中时同输入秒级完成；
-# 要求有图片，排除「没有图片的纯文本文件本来就近乎瞬时」
+# cache_hit 判定口径：双层缓存命中时同输入秒级完成；要求有图片，排除「没有图片的纯文本文件本来就近乎瞬时」
 _CACHE_HIT_MAX_MS = 2000
 
 _db: sqlite3.Connection | None = None
@@ -61,8 +60,7 @@ def init_db(db_path: str) -> None:
 def _write(sql: str, params: tuple = ()) -> sqlite3.Cursor:
     """短事务写入：BEGIN IMMEDIATE 立即取写锁，同一连接跨线程全部访问串行在锁内。
 
-    语句都是毫秒级，读写一律加锁换正确性，避免多线程并发复用
-    同一 sqlite3.Connection 的交错事务问题。
+    语句都是毫秒级，读写一律加锁换正确性，避免多线程并发复用同一 sqlite3.Connection 的交错事务问题。
     """
     with _db_lock:
         _db.execute("BEGIN IMMEDIATE")
@@ -83,8 +81,7 @@ def _read(sql: str, params: tuple = ()) -> list[sqlite3.Row]:
 def cleanup_stale_temp_files() -> None:
     """清扫进程硬杀遗留的上传临时文件（omnimd-demo-* 前缀，超 1 小时）。
 
-    正常路径的清理在 _run 的 finally；进程被 kill -9 / 断电时 finally
-    不执行，临时文件由下一次启动补扫。
+    正常路径的清理在 _run 的 finally；进程被 kill -9 / 断电时 finally 不执行，临时文件由下一次启动补扫。
     """
     import time as _time
     tmp_dir = Path(tempfile.gettempdir())
@@ -114,11 +111,10 @@ _converter_lock = threading.Lock()
 
 
 def get_converter() -> OmniMD:
-    """OmniMD 实例（进程级缓存，构造一次跨请求复用）。
+    """OmniMD 实例（进程级缓存，构造一次跨任务复用）。
 
-    产出组成是 convert 的每次参数——同一个实例服务全部任务，
-    引擎与模型客户端在实例内共享；缓存为磁盘缓存，跨进程共享。构造加锁：预热线程
-    与首个请求线程并发时不会重复构造。
+    产出组成是 convert 的每次参数——同一个实例服务全部任务，引擎与模型客户端在实例内共享；缓存为磁盘缓存，跨进程共享。
+    构造加锁：预热线程与首个请求线程并发时不会重复构造。
     """
     global _md
     if _md is None:
@@ -129,11 +125,9 @@ def get_converter() -> OmniMD:
 
 
 def prewarm() -> None:
-    """后台预热转换器：解析引擎的模块导入耗时较长（markitdown 全量
-    转换器），启动期先吸收掉，首个任务的耗时统计才反映真实管线成本。
+    """后台预热转换器：解析引擎的模块导入耗时较长（markitdown 全量转换器），启动期先吸收掉，首个任务的耗时统计才反映真实管线成本。
 
-    预热转换一个临时文本文件——无图片即无上传与模型调用；
-    失败只记日志，不影响服务启动。
+    预热转换一个临时文本文件——无图片即无上传与模型调用；失败只记日志，不影响服务启动。
     """
     def _warm() -> None:
         tmp = Path(tempfile.gettempdir()) / f"omnimd-demo-warmup-{uuid.uuid4().hex}.txt"
@@ -160,9 +154,8 @@ class ConcurrencyLimitError(Exception):
 def create_task(filename: str, size: int, tmp_path: Path, output: str = "body") -> str:
     """登记已落盘的上传文件为 pending 任务并投递工作线程，返回任务 ID。
 
-    调用方负责 output 取值校验与文件落盘。并发上限判定并入同一条
-    INSERT（WHERE 子查询计数）——检查与插入原子，上传请求体读取
-    时段的并发请求不会击穿上限。
+    调用方负责 output 取值校验与文件落盘。
+    并发上限判定并入同一条 INSERT（WHERE 子查询计数）——检查与插入原子，上传请求体读取时段的并发请求不会击穿上限。
     """
     task_id = uuid.uuid4().hex
     try:
@@ -199,15 +192,13 @@ def _run(task_id: str, path: Path, output: str) -> None:
                 (str(e), elapsed_ms, task_id),
             )
         except Exception:
-            # 失败落库自身异常（库锁/磁盘满）：记日志而非让线程裸崩；
-            # 残留的 running 状态由重启时的僵尸任务清理兜底
+            # 失败落库自身异常（库锁/磁盘满）：记日志而非让线程裸崩；残留的 running 状态由重启时的僵尸任务清理兜底
             logger.exception("任务失败状态写入异常: %s", task_id)
         return
     finally:
         path.unlink(missing_ok=True)   # 上传文件即用即删
 
-    # 图片文件 + 无视觉任务产出：单图只走注册+上传，亚秒即完成属常态，
-    # 不参与命中判定（否则首转也显示「缓存命中」）
+    # 图片文件 + 无视觉任务产出：单图只走注册+上传，亚秒即完成属常态，不参与命中判定（否则首转也显示「缓存命中」）
     is_image_input = path.suffix.lower() in IMAGE_EXTENSIONS
     eligible = image_count > 0 and not (
         is_image_input and "ocr" not in output and "alt" not in output

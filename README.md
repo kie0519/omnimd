@@ -115,7 +115,7 @@ omnimd <文件路径>.pdf -o output/ --output body,url,ocr   # 正文 + 图片�
 
 ### Python 库
 
-适合应用集成与数据管道。用法与大模型 SDK 同构：先构造客户端，连接配置一次配齐；后转换，`convert()` 只传文件与本次产出组成：
+适合应用集成与数据管道。用法与大模型 SDK 一致：先构造客户端，连接配置一次配齐；后转换，`convert()` 只传文件与本次产出组成：
 
 ```python
 from omnimd import OmniMD, VlmConfig, S3Config
@@ -135,7 +135,7 @@ md.convert("<文件路径>.pdf", output="body,url")  # 本次产出组成：正�
 results = md.convert_many(["<文件路径>.pdf", "<输入目录>/"])  # 批量
 ```
 
-实例可重复使用；单文件失败在 `convert_many` 的结果中为异常对象，`convert` 抛 `OmniMDError` 子类（配置/格式错误）或上游原始异常。完整接口说明见 [library.md](https://github.com/kie0519/omnimd/blob/main/docs/library.md)。
+实例可重复使用；单文件失败在 `convert_many` 的结果中为异常对象，`convert` 抛 `OmniMDError` 子类（配置/格式错误）或上游原始异常。可运行示例见 [examples/](https://github.com/kie0519/omnimd/tree/main/examples)（脚本直调与服务化封装两种形态），完整接口说明见 [library.md](https://github.com/kie0519/omnimd/blob/main/docs/library.md)。
 
 ### Claude Code skill
 

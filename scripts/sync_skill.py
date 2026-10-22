@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
 """sync_skill — 母本 skills/omnimd/ → 部署副本的一键同步。
 
-流程：frontmatter 校验 → .env.example 对齐断言 → 复制 → 逐字节
-diff 断言 → 冒烟自检（omnimd CLI 可用）。运行时产物（.env、
-__pycache__/）不参与同步、不删除。
+流程：frontmatter 校验 → .env.example 对齐断言 → 复制 → 逐字节 diff 断言 → 冒烟自检（omnimd CLI 可用）。
+运行时产物（.env、__pycache__/）不参与同步、不删除。
 
-skill 是纯知识形态（SKILL.md 指令 + .env.example 模板）——工具本体
-omnimd 经 pip 分发，不含包装脚本，没有需要逐字节对齐的源码副本，
-同步即整体复制。
+skill 是纯知识（SKILL.md 指令 + .env.example 模板），同步即整体复制。
 
-仓库的 skills/ 即部署源容器（与生态惯例同构：skills/<name>/SKILL.md），
-也可手动 cp -r skills/omnimd <目标>/.claude/skills/ 部署。
+仓库的 skills/ 即部署源容器（与生态惯例同构：skills/<name>/SKILL.md），也可手动 cp -r skills/omnimd <目标>/.claude/skills/ 部署。
 
 用法（仓库根执行）：
     python scripts/sync_skill.py [部署目标目录]

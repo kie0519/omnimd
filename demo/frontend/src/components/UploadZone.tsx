@@ -28,8 +28,7 @@ const CONTENT_VALUES = ["ocr", "alt"] as const;
 type Selection = { presentation: string | null; content: string[] };
 
 /** 记忆上次选择；无记忆或记忆值非法时回到缺省（纯解析，与服务端/CLI 缺省 body 一致）。
- *  依赖关系一并校验：无呈现部件时内容清空（localStorage 手改可能产生
- *  body,ocr 之类的矛盾态，直接提交会被服务端 400） */
+ *  依赖关系一并校验：无呈现部件时内容清空（localStorage 手改可能产生 body,ocr 之类的矛盾态，直接提交会被服务端 400） */
 function loadOutput(): Selection {
   try {
     const raw = localStorage.getItem(OUTPUT_STORAGE_KEY);
@@ -45,8 +44,7 @@ function loadOutput(): Selection {
   }
 }
 
-/** 提交时组装为规范序 CSV（body 锚点 + 呈现 + 内容按固定序）——
- *  与服务端 parse_output 归一化同序，乐观插入的列表行即刻携带最终形态 */
+/** 提交时组装为规范序 CSV（body 锚点 + 呈现 + 内容按固定序），与服务端 parse_output 归一化同序 */
 function buildOutput(sel: Selection): string {
   const parts = ["body"];
   if (sel.presentation) parts.push(sel.presentation);
@@ -55,8 +53,7 @@ function buildOutput(sel: Selection): string {
 }
 
 /** 当前选择下，一张图片在产出 Markdown 中的形态（实时预览）。
- * 示例值只示意结构：链接指向原图或 data URI，alt 位放一句话描述，
- * 转写文本块跟在下方；纯解析时图片不进产出。 */
+ * 示例值只示意结构：链接指向原图或 data URI，alt 位放一句话描述，转写文本块跟在下方；纯解析时图片不进产出。 */
 function outputPreview(sel: Selection): string {
   if (!sel.presentation) return "（仅正文，图片不处理）";
   const alt = sel.content.includes("alt") ? "一句话描述" : "图片";
@@ -66,7 +63,7 @@ function outputPreview(sel: Selection): string {
   return block;
 }
 
-/** 三步流程的步骤图（与 Icons.tsx 同一套图标规范：细线、圆头、currentColor） */
+/** 三步流程的步骤图 */
 function StepArt({ kind }: { kind: 0 | 1 | 2 }) {
   if (kind === 0) return <IcFileDoc size={26} />;
   if (kind === 1) return <IcSparkle size={26} />;
@@ -113,8 +110,7 @@ export default function UploadZone({ formats, submitting, onAccepted }: Props) {
   function checkFile(file: File): string | null {
     if (file.size > MAX_UPLOAD_MB * 1024 * 1024)
       return `${file.name}：超出大小上限（≤ ${MAX_UPLOAD_MB}MB）`;
-    // 扩展名与后端同口径：取最后一个点之后；无点、隐藏文件、点在末尾
-    // 均按「无扩展名」报（后端仍兜底校验，预检只是省一次无谓上传）
+    // 扩展名与后端同口径：取最后一个点之后；无点、隐藏文件、点在末尾均按「无扩展名」报（后端仍兜底校验，预检只是省一次无谓上传）
     const dot = file.name.lastIndexOf(".");
     const ext =
       dot > 0 && dot < file.name.length - 1
@@ -160,9 +156,8 @@ export default function UploadZone({ formats, submitting, onAccepted }: Props) {
         </p>
       </div>
 
-      {/* 上传热区。提交锁定用 aria-disabled 而非 disabled：disabled 元素
-          不派发拖拽事件，onDrop 不执行 preventDefault，拖入的文件会被
-          浏览器当作页面打开（导航劫持）——事件照常拦截，动作层值守卫 */}
+      {/* 上传热区。提交锁定用 aria-disabled 而非 disabled：disabled 元素不派发拖拽事件，
+          onDrop 不执行 preventDefault，拖入的文件会被浏览器当作页面打开（导航劫持）——事件照常拦截，动作层值守卫 */}
       <button
         type="button"
         className={`${s.zone} ${dragOver ? s.dragOver : ""} ${submitting ? s.zoneBusy : ""}`}

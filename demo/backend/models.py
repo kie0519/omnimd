@@ -21,7 +21,7 @@ class TaskSummary(BaseModel):
     image_count: int | None = None    # done 时统计：产出中的图片块数
     char_count: int | None = None     # done 时统计：产出字符数
     elapsed_ms: int | None = None     # done/failed 时统计：转换耗时（failed 记录失败前耗时）
-    cache_hit: bool | None = None     # done 时判定：耗时 < 2s 且有图片，图片文件输入且产出不含转写/描述的除外（口径见 tasks.py）
+    cache_hit: bool | None = None     # done 时判定：是否双层缓存命中
     created_at: str               # ISO 8601 UTC（T 分隔、Z 后缀）
 
 

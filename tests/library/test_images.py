@@ -82,8 +82,7 @@ def test_text_cache_roundtrip(tmp_path):
 
 
 def test_cache_key_without_transport_dimension(tmp_path):
-    """缓存键不含传图方式维度——VLM 对同一张图的转写不因 URL 还是
-    base64 传入而不同（取图方式由产出组成推导，属实现细节）"""
+    """缓存键不含传图方式维度——VLM 对同一张图的转写不因 URL 还是 base64 传入而不同"""
     store = make_store(tmp_path)
     for path in store._prompt_dirs.values():
         assert "--url--" not in path.name and "--base64--" not in path.name

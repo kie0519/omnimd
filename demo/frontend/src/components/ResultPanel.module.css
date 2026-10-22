@@ -249,7 +249,7 @@
   margin-inline: 0;
 }
 
-/* 源码视图：超长行不折行（图片链接行天然超长，折行即面条）。
+/* 源码视图：超长行不折行（图片链接行天然超长，折行后难以阅读）。
    max-content 撑开滚动宽度、min-width 兜底窄内容，满宽左对齐 */
 .source {
   font-family: var(--font-mono);

@@ -71,8 +71,7 @@ export async function deleteTask(
   taskId: string,
   signal?: AbortSignal
 ): Promise<void> {
-  // DELETE 204 无响应体，与 request 同逻辑但不解析 JSON；
-  // 5xx 同样归一 NetworkError——删除失败与其它请求共享离线横幅
+  // DELETE 204 无响应体，不解析 JSON；5xx 归一 NetworkError
   let resp: Response;
   try {
     resp = await fetch(`${BASE}/api/tasks/${taskId}`, { method: "DELETE", signal });

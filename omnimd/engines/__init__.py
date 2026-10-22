@@ -3,12 +3,11 @@
 路由规则（按优先级）：
 - 图片   → ImageEngine：一张图片就是一个「只有资产、没有正文」的文件
 - pdf    → pymupdf4llm：唯一能保留全部内嵌图片的 PDF 引擎
-- 其他   → DOC_ENGINE 选定引擎（缺省 markitdown）；所选引擎不支持的格式
-  回退另一引擎，支持的格式取并集
+- 其他   → DOC_ENGINE 选定引擎（缺省 markitdown）；所选引擎不支持的格式回退另一引擎，支持的格式取并集
 
-图片与 PDF 的路由不可配置（语义唯一）；引擎模块在首次解析时才导入：
-markitdown 的模块导入会加载全部格式转换器（pandas、onnxruntime 等），
-远重于其他引擎，按需加载使一次运行只加载实际用到的引擎。
+图片与 PDF 的路由不可配置（语义唯一）；引擎模块在首次解析时导入：
+markitdown 的模块导入会加载全部格式转换器（pandas、onnxruntime 等），远重于其他引擎，
+只在用到时加载。
 """
 from dataclasses import dataclass
 from importlib import import_module
@@ -79,8 +78,7 @@ def supported_extensions() -> list[str]:
 
 
 def resolve_engine(suffix: str, doc_engine: str) -> type:
-    """按扩展名解析引擎类（此时才导入引擎模块）；
-    不支持的取值/格式抛异常并列出全部可选项"""
+    """按扩展名解析引擎类（此时才导入引擎模块）；不支持的取值抛 ConfigError、不支持的格式抛 UnsupportedFormatError"""
     if doc_engine not in DOC_ENGINES:
         raise ConfigError(
             f"不支持的 DOC_ENGINE: {doc_engine}"
@@ -94,7 +92,6 @@ def resolve_engine(suffix: str, doc_engine: str) -> type:
     spec = DOC_ENGINES[doc_engine]
     if suffix in spec.extensions:
         return spec.load()
-    # 所选引擎不支持该格式时回退其它支持它的引擎，支持的格式取并集
     for other in DOC_ENGINES.values():
         if other is not spec and suffix in other.extensions:
             return other.load()

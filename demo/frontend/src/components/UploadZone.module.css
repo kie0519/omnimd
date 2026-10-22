@@ -1,8 +1,6 @@
 /* 首访主舞台：价值主张 + 上传热区 + 左右分区（流程内容 | 产出组成） */
 
-/* 主舞台比结果视图宽：左右分区需要横向空间（720px 是文档阅读宽度，
-   约束的是结果内容区，不是这个操作面板）。
-   一屏构造：wrap 填满 .work 高度，内容不足时垂直居中，上传热区弹性
+/* 一屏构造：wrap 填满 .work 高度，内容不足时垂直居中，上传热区弹性
    伸缩吸收剩余空间——布局连续适配任意视口高度，不靠断点切换 */
 .wrap {
   max-width: 860px;
@@ -45,8 +43,7 @@
 
 /* ── 上传热区 ── */
 
-/* 上传热区是空态的唯一主体：弹性伸缩（高视口舒展、矮视口收缩），
-   只在极端小窗触底——此时 .work 的滚动安全网兜住 */
+/* 上传热区是空态的唯一主体：弹性伸缩（高视口舒展、矮视口收缩），极端小窗触底 */
 .zone {
   display: flex;
   flex-direction: column;
@@ -360,50 +357,31 @@
 /* ── 格式矩阵 ── */
 
 .formatBoard {
+  composes: board from "../shared/formatMatrix.module.css";
   grid-area: formats;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-2);
   padding: var(--s-4);
-  border: 1px solid var(--line);
   border-radius: var(--r-2);
-  background: var(--surface);
 }
 
 .formatGroup {
-  display: grid;
+  composes: group from "../shared/formatMatrix.module.css";
   grid-template-columns: 64px 1fr;
-  gap: var(--s-2);
-  align-items: baseline;
 }
 
 .formatLabel {
-  font-size: var(--t-xs);
-  font-weight: 650;
-  color: var(--ink-2);
+  composes: label from "../shared/formatMatrix.module.css";
 }
 
 .formatChips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s-1);
-  min-width: 0;
+  composes: chips from "../shared/formatMatrix.module.css";
 }
 
 .formatChip {
-  font-family: var(--font-mono);
-  font-size: var(--t-xs);
-  color: var(--ink-2);
-  padding: 1px var(--s-1);
-  border: 1px solid var(--line);
-  border-radius: var(--r-1);
-  background: var(--bg);
-  line-height: 1.5;
+  composes: chip from "../shared/formatMatrix.module.css";
 }
 
 /* ── 短视口压缩档：配角让位，一屏保完整 ──
-   价值主张标题、上传热区、产出组成不动；让位顺序为说明文字与内边距。
-   更极端的小窗由 .work 的滚动安全网兜底（滚动而非截断） */
+   价值主张标题、上传热区、产出组成不动；让位顺序为说明文字与内边距。 */
 @media (max-height: 760px) {
   .stepDesc {
     display: none;

@@ -105,6 +105,14 @@ export default function App() {
     }
   }, []);
 
+  /** 详情请求确认任务已不存在（404 等）：清选中态与详情、移除本地列表行并失效缓存（不留「已选中无内容」中间态） */
+  const purgeMissing = useCallback((taskId: string) => {
+    setSelectedId(null);
+    setDetail(null);
+    setTasks((ts) => ts.filter((t) => t.task_id !== taskId));
+    cache.current.delete(taskId);
+  }, []);
+
   // 启动自检：探活确认后端在线；能力数据（支持格式清单）单独拉取
   useEffect(() => {
     checkHealth()
@@ -155,7 +163,7 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [refreshList]);
 
-  // 列表轮询：活跃 2s / 静默 5s（活跃与搜索中保持 2s 保证结果及时，静默降频省请求）
+  // 列表轮询：活跃 2s / 静默 5s
   const hasActive = tasks.some(
     (t) => t.status === "pending" || t.status === "running"
   );
@@ -216,13 +224,7 @@ export default function App() {
         if (e instanceof NetworkError) {
           setOffline(true);
         } else if (e.name !== "AbortError") {
-          // 404 等请求失败：选中态一并清掉（记录已不存在，不能停留在
-          // 「已选中但无内容」的中间态），并从本地列表移除该行
-          const failedId = selectedId;
-          setSelectedId(null);
-          setDetail(null);
-          setTasks((ts) => ts.filter((t) => t.task_id !== failedId));
-          cache.current.delete(failedId);
+          purgeMissing(selectedId);
         }
       })
       .finally(() => {
@@ -249,13 +251,7 @@ export default function App() {
         if (e instanceof NetworkError) {
           setOffline(true);
         } else if (!(e instanceof DOMException && e.name === "AbortError")) {
-          // 404 等：任务已被删除（如另一端操作），停止轮询并同步清理
-          // 选中态与列表行——与首次取详情的清理路径同一处理
-          const failedId = selectedId;
-          setSelectedId(null);
-          setDetail(null);
-          setTasks((ts) => ts.filter((t) => t.task_id !== failedId));
-          cache.current.delete(failedId);
+          purgeMissing(selectedId);
         }
       }
     }, 2000);
@@ -316,8 +312,7 @@ export default function App() {
         cache_hit: null,
         created_at: localNowIso(),
       };
-      // 搜索过滤进行中不乐观置顶——服务端按关键词过滤会把不匹配的新任务
-      // 从列表剔除，置顶反而造成列表与详情短暂分裂；由下轮轮询自然收录
+      // 搜索命中时新任务是否入列以下轮列表为准（/api/tasks 按关键词过滤）
       if (!queryRef.current)
         setTasks((ts) => [optimistic, ...ts.filter((t) => t.task_id !== taskId)]);
       // 批量上传只选中首个任务：其余不抢焦点（用户可能已在看某个结果）
@@ -328,9 +323,8 @@ export default function App() {
     [refreshList]
   );
 
-  // 批量上传队列：App 级持有（首个任务创建后空态即卸载，队列不能住在
-  // UploadZone 里）。槽位感知提交——按列表活跃数 + 在途请求数计算空位，
-  // 逐个发出；列表轮询每轮重估，任务完成腾出的空位随即补发。
+  // 批量上传队列：App 级持有；首个任务创建后上传区即卸载。
+  // 槽位感知提交——按列表活跃数 + 在途请求数计算空位，逐个发出；列表轮询每轮重估，任务完成腾出的空位随即补发。
   const uploadQueue = useRef<QueuedFile[]>([]);
   const inFlight = useRef(0);
   const [submitting, setSubmitting] = useState(false);
@@ -350,9 +344,7 @@ export default function App() {
           handleCreated(task_id, filename, item.output)
         )
         .catch((e) => {
-          // 网络故障与 429（并发已满）回队首，随下轮轮询重试；
-          // 其余失败（后端拒格式/大小等）放弃该文件并告知用户，
-          // 不允许文件悄悄消失
+          // 网络故障与 429（并发已满）回队首，随下轮轮询重试；其余失败（后端拒格式/大小等）放弃该文件并告知用户，不允许文件悄悄消失
           if (e instanceof NetworkError) setOffline(true);
           if (e instanceof NetworkError || (e as { status?: number }).status === 429) {
             uploadQueue.current.unshift(item);
@@ -363,8 +355,7 @@ export default function App() {
         })
         .finally(() => {
           inFlight.current -= 1;
-          // 请求结束即收口：被放弃的文件不触发列表变化，submitting
-          // 不能等下一轮轮询重估才收回
+          // 请求结束即收口：被放弃的文件不触发列表变化，submitting 不能等下一轮轮询重估才收回
           setSubmitting(uploadQueue.current.length > 0 || inFlight.current > 0);
         });
     }
@@ -384,14 +375,13 @@ export default function App() {
     [flushQueue]
   );
 
-  // 删除成功：本地移除 + 缓存失效，返回 true；失败返回 false，
-  // 由 TaskItem 还原动画状态（记录保持可见、可再次删除）
+  // 删除成功：本地移除 + 缓存失效，返回 true；失败返回 false
   const handleDelete = useCallback(
     async (taskId: string): Promise<boolean> => {
       try {
         await deleteTask(taskId);
       } catch (e) {
-        if (e instanceof NetworkError) setOffline(true);   // 与列表/详情同款离线语义
+        if (e instanceof NetworkError) setOffline(true);
         return false;
       }
       cache.current.delete(taskId);
@@ -429,7 +419,7 @@ export default function App() {
       />
       <main className={s.main}>
         <OfflineBanner show={offline} />
-        {/* 窄屏顶栏：抽屉入口 + 品牌标 + 使用指南（与左栏同一套图标规范） */}
+        {/* 窄屏顶栏：抽屉入口 + 品牌标 + 使用指南 */}
         <div className={s.topbar}>
           <button
             type="button"
@@ -439,7 +429,6 @@ export default function App() {
           >
             <IcMenu size={18} />
           </button>
-          {/* 产品 LOGO（与侧边栏品牌区、浏览器图标同源） */}
           <img className={s.topMark} src="/logo.svg" width={20} height={20} alt="" aria-hidden="true" />
           <span className={s.topTitle}>omnimd</span>
           <button

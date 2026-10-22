@@ -1,8 +1,7 @@
 """markitdown 引擎：非 PDF 格式的缺省解析引擎
 
 支持的格式最多（xlsx/html/csv/json/xml/zip/ipynb/epub/...），
-keep_data_uris=True 保留内嵌图片为 data URI，
-与图片注册管线（converter 的 _DATA_URI_PATTERN）天然衔接。
+keep_data_uris=True 保留内嵌图片为 data URI（图片管线的输入形态）。
 
 markitdown 内部对每个文件可能尝试多个转换器，异常分三类：
 UnsupportedFormatException / FileConversionException / MissingDependencyException，

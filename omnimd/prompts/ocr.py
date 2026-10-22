@@ -3,8 +3,6 @@
 将任意图片完整转换为 Markdown 文本，用于文件解析后的可检索内容。
 适用一切被解析文件中的图片：文书证照、表格、数据图表、图示结构、
 界面截图、工程图纸、照片实物、装饰图，不预设业务场景。
-
-提示词正文定义处。
 """
 
 OCR_SYSTEM_PROMPT = """You are an enterprise-grade document-image transcriber. \

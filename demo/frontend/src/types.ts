@@ -37,6 +37,6 @@ export interface HealthResponse {
 }
 
 export interface FormatsResponse {
-  /** 支持扩展名全量清单（含点号、已排序），上传预检与格式提示共用 */
+  /** 支持扩展名全量清单（含点号、已排序） */
   formats: string[];
 }

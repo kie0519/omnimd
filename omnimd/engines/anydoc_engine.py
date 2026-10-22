@@ -1,20 +1,15 @@
 """anydoc 引擎：非 PDF 格式的高质量正文解析（可配置选项）
 
-anydoc（Firecrawl，Rust 实现）在正文质量上优于 markitdown：结构保真更好
-（合并单元格摊平、脚注、LaTeX 公式），且补齐 markitdown 不覆盖的旧格式
-与开放文档格式（清单见 engines 注册表）。
+anydoc（Firecrawl，Rust 实现）：结构保真（合并单元格摊平、脚注、LaTeX 公式），
+覆盖旧格式与开放文档格式（清单见 engines 注册表）。
 
-anydoc 的 to_markdown 对嵌入图片有损（只剩 alt 文本，alt 为空则连标记都不留），
-因此本引擎不用它的现成 Markdown 输出，而是解析为 Document 模型
-（to_document——图片字节与正文位置全保留）后自行渲染为 GFM：
+本引擎走 to_document（图片字节与正文位置全保留）后自行渲染为 GFM；
+anydoc 的 to_markdown 对嵌入图片有损（只剩 alt 文本，alt 为空则连标记都不留）：
 
 - 嵌入图片 → store.register 注册进图片管线，正文留 @@IMG:{sha256}@@ 占位符
 - 正文结构（标题/表格/列表/公式/脚注/引用）→ 按 anydoc 序列化约定渲染
 
 即正文质量用 anydoc 的，图片托管与转写是本工具的。
-
-PDF 永不路由到本引擎：anydoc 的 PDF 路线不提取图片且不支持 to_document，
-图片保真只有 pymupdf4llm 一条路。
 """
 import logging
 import re
@@ -48,7 +43,7 @@ class AnydocEngine(ParseEngine):
                 f"或改用 DOC_ENGINE=markitdown 重试。"
             )
         if fmt == "pdf":
-            # to_document 不支持 pdf——不可达分支的防御性拒绝
+            # to_document 不支持 pdf
             raise ValueError("anydoc 引擎不支持 PDF（不提取图片），PDF 走 pymupdf4llm")
         document = anydoc.to_document(data, fmt)
         markdown = _render_document(document, store)
@@ -64,8 +59,7 @@ class AnydocEngine(ParseEngine):
 
 _ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"]
 
-# 有序列表 marker 的 GFM 等价物；无映射的稀有 marker 与超出字母表/
-# 罗马数字范围的序号退化为十进制
+# 有序列表 marker 的 GFM 等价物；无映射的稀有 marker 与超出字母表/罗马数字范围的序号退化为十进制
 def _alpha(fmt: str):
     def label(n: int) -> str:
         if 1 <= n <= 26:
@@ -173,8 +167,7 @@ def _render_table(table, doc, store) -> str:
                 cells.append("")
                 continue
             cell = _render_blocks(slot.cell.blocks, doc, store)
-            # GFM 表格单元不能含块级元素：多段落以单个 <br> 相接
-            # （段落分隔 \n\n 与段内单 \n 统一收敛），管道转义
+            # GFM 表格单元不能含块级元素：多段落以单个 <br> 相接（段落分隔 \n\n 与段内单 \n 统一收敛），管道转义
             flattened = "<br>".join(
                 seg.replace("\n", "<br>") for seg in cell.split("\n\n"))
             cells.append(flattened.replace("|", "\\|").strip())
@@ -200,12 +193,10 @@ _SPACE = _SpaceInline()
 
 
 def _render_inlines(inlines, doc, store) -> str:
-    # 段内软换行（line_break）是排版换行不是语义分段，折叠为空格——
-    # 与 Markdown 渲染器对单换行的处理一致；空格以无样式 text 参与
-    # 后续 run 合并（并入相邻同样式段，不产生破碎标记）
+    # 段内软换行（line_break）是排版换行不是语义分段，折叠为空格——与 Markdown 渲染器对单换行的处理一致；
+    # 空格以无样式 text 参与后续 run 合并（并入相邻同样式段，不产生破碎标记）
     inlines = [_SPACE if il.kind == "line_break" else il for il in inlines or []]
-    # 相邻同样式 text 段先合并（Word 常把一句话拆成多个 run），
-    # 避免 **360****AI** 这种破碎的强调标记
+    # 相邻同样式 text 段先合并（Word 常把一句话拆成多个 run），避免 **360****AI** 这种破碎的强调标记
     merged = []
     for il in inlines:
         if (il.kind == "text" and merged and merged[-1].kind == "text"

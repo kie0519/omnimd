@@ -22,7 +22,7 @@ from omnimd.exceptions import ConfigError
 import tasks
 from models import TaskCreated, TaskDetail, TaskSummary
 
-# 上传上限（字节）：demo 边界，前后端双重校验
+# 上传上限（字节）：demo 边界，非库限制（前端另持同值，改值需两侧同步）
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 _SUPPORTED = frozenset(supported_extensions())
@@ -44,9 +44,9 @@ async def lifespan(app: FastAPI):
     yield
 
 
-# API 子应用：/api 命名空间整体交给它（app.mount("/api", ...)）——
-# 命名空间内未匹配的路径与方法由它自己返回 404 JSON，与根上的
-# SPA 静态兜底互不越界。API 文档随子应用在 /api/docs
+# API 子应用：/api 命名空间整体交给它（app.mount("/api", ...)）
+# ——命名空间内未匹配的路径与方法由它自己返回 404 JSON。
+# API 文档随子应用在 /api/docs
 api_app = FastAPI(title="omnimd demo API")
 
 
@@ -69,7 +69,7 @@ def health() -> dict:
 
 @api_app.get("/formats")
 def formats() -> dict:
-    # 能力数据：支持扩展名清单，前端上传预检与格式提示行共用（改格式不改前端）
+    # 能力数据：支持扩展名清单
     return {"formats": sorted(_SUPPORTED)}
 
 
@@ -93,16 +93,14 @@ async def create_task(file: UploadFile, output: str = Form("body")) -> TaskCreat
             f"并发任务已满（同时进行 ≤ {tasks.MAX_CONCURRENT}）。"
             f"请等待当前任务完成后重试。",
         )
-    # 流式分块读取：先按 Content-Length 预检，再边读边校验——超大
-    # 上传在读满上限时即刻终止，不把整个请求体读进内存
+    # 流式分块读取：先按 Content-Length 预检，再边读边校验——超大上传在读满上限时即刻终止
     declared = file.size or 0
     if declared > MAX_UPLOAD_BYTES:
         raise HTTPException(
             400, f"文件超出大小上限（≤ {MAX_UPLOAD_BYTES // 1024 // 1024}MB）。请压缩或拆分后重试。"
         )
     # 边读边写盘：不把请求体聚合进内存，内存占用与上传大小无关。
-    # 读循环包 finally：客户端中途断开（read 抛错）时也清理临时文件，
-    # 不等重启清扫兜底
+    # 读循环异常路径也清理临时文件（客户端中途断开时 read 抛错）
     tmp_path = Path(tempfile.gettempdir()) / f"omnimd-demo-{uuid.uuid4().hex}{suffix}"
     received = 0
     oversize = False
@@ -171,14 +169,13 @@ def delete_task(task_id: str):
         raise HTTPException(404, "任务不存在。")
 
 
-# 主应用：只有两个挂载（/api 子应用 + / 静态），无自身路由——
-# docs 关闭避免空文档页；API 文档见子应用的 /api/docs
+# 主应用：只有两个挂载（/api 子应用 + / 静态），无自身路由——docs 关闭避免空文档页；API 文档见子应用的 /api/docs
 app = FastAPI(title="omnimd demo", lifespan=lifespan,
               docs_url=None, redoc_url=None, openapi_url=None)
 
-# 前端构建产物由本服务托管（同源）。跨源读写经 CORS_ORIGINS 收口：
-# 缺省放行本机回环（浏览器里从其他源调用 demo API 的常用形态），
-# 多个来源用逗号分隔；设为 * 才全放开（明示选择宽面）
+# 前端构建产物由本服务托管（同源）。
+# 跨源读写经 CORS_ORIGINS 收口：缺省放行本机回环（浏览器里从其他源调用 demo API 的常用形态），多个来源用逗号分隔；
+# 设为 * 才全放开（明示选择宽面）
 _origins = os.getenv("CORS_ORIGINS", "http://localhost:8300,http://127.0.0.1:8300")
 if _origins.strip() == "*":
     _allow_origins: list[str] | str = "*"
@@ -195,10 +192,9 @@ app.mount("/api", api_app)
 
 
 class SPAStaticFiles(StaticFiles):
-    """未匹配路径回 index.html——前端路由的深链刷新不由静态 404 截断。
+    """未匹配路径回 index.html（SPA 深链支持）。
 
-    文件未命中时 StaticFiles 以 HTTPException(404) 上抛（非返回 404
-    响应），回退逻辑须捕获异常而非检查响应码。
+    文件未命中时 StaticFiles 以 HTTPException(404) 上抛（非返回 404 响应），回退逻辑须捕获异常而非检查响应码。
     """
 
     async def get_response(self, path: str, scope):
@@ -211,6 +207,5 @@ class SPAStaticFiles(StaticFiles):
 
 
 if _DIST.exists():
-    # 挂整个 dist：html=True 命中 /（index.html）；/assets/* 与带 hash 的
-    # 构建产物照常服务；favicon 等根级静态文件（Vite public/ 的落点）同源可达
+    # 挂整个 dist：html=True 命中 /（index.html）；/assets/* 与带 hash 的构建产物照常服务；favicon 等根级静态文件（Vite public/ 的落点）同源可达
     app.mount("/", SPAStaticFiles(directory=_DIST, html=True), name="frontend")

@@ -20,7 +20,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  /* 滚动安全网：内容超出视口时滚动，不静默裁切（结果视图自管滚动，不受影响） */
+  /* 滚动安全网：内容超出视口时滚动，不静默裁切 */
   overflow-y: auto;
 }
 
@@ -67,7 +67,7 @@
     letter-spacing: -0.01em;
   }
 
-  /* 使用指南图标按钮：与抽屉入口对称，压住顶栏右缘 */
+  /* 使用指南图标按钮：压住顶栏右缘 */
   .topHelpBtn {
     margin-left: auto;
     display: grid;

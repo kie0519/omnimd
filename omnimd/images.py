@@ -3,13 +3,10 @@
 职责：
 1. 尺寸过滤——短边 < min_dimension 的图片视为装饰性元素，直接丢弃
 2. SHA-256 内容去重——相同图片只保留第一份，其余位置引用同一 URL
-3. 视觉产物缓存——转写与 alt 按
-   {thinking}--{model}--{kind}--{prompt_digest}/{sha}.{kind}.md 落盘：
-   按思考控制方式、模型与任务提示词摘要隔离，换配置或改提示词
-   强制重新生成，同配置重跑不调模型（VLM 对同一张图的转写不因
-   URL 还是 base64 传入而不同，取图方式不进缓存键）
-4. URL 缓存——上传结果按 {provider}--{端点与桶与前缀的摘要}/{sha256}.url 落盘：
-   按存储端点、桶与对象前缀隔离，换任意一项自然重新上传，重跑不重复上传
+3. 视觉产物缓存——转写与 alt 按 {thinking}--{model}--{kind}--{prompt_digest}/{sha}.{kind}.md 落盘：
+   按思考控制方式、模型与任务提示词摘要隔离，换配置或改提示词强制重新生成，同配置重跑不调模型
+   （VLM 对同一张图的转写不因 URL 还是 base64 传入而不同，取图方式不进缓存键）
+4. URL 缓存——上传结果按 {provider}--{端点与桶与前缀的摘要}/{sha256}.url 落盘：按存储端点、桶与对象前缀隔离，换任意一项自然重新上传，重跑不重复上传
 5. 上传走可插拔存储后端，换后端只改配置
 """
 import base64
@@ -59,8 +56,7 @@ class ImageAsset:
     def data_uri(self) -> str:
         """图片字节的 base64 data URI 形态（base64 部件渲染与传图用）。
 
-        MIME 统一按 png 声明（与上传侧 {sha256}.png 命名保持一致）——多数
-        端点按字节嗅探实际格式，严格校验 MIME 的端点不在支持范围。
+        MIME 统一按 png 声明——多数端点按字节嗅探实际格式，严格校验 MIME 的端点不在支持范围。
         """
         encoded = base64.b64encode(self.data).decode()
         return f"data:image/png;base64,{encoded}"
@@ -68,8 +64,7 @@ class ImageAsset:
     def is_decorative(self, min_dimension: int) -> bool:
         """短边低于阈值视为装饰性图片（分隔线、小图标等）。
 
-        解码失败的图片按非装饰处理（进入正常管线，在上传/转写阶段
-        错误原样上抛），只记警告日志——降级不静默。
+        解码失败的图片按非装饰处理（进入正常管线，在上传/转写阶段错误原样上抛），只记警告日志——降级不静默。
         """
         try:
             with Image.open(io.BytesIO(self.data)) as img:
@@ -89,10 +84,7 @@ class ImageAssetStore:
         self._by_hash: dict[str, ImageAsset] = {}
         # uploader 允许为 None（本次转换不需要上传：产出不含 url 部件）
         self._uploader = uploader
-        # 视觉产物缓存按「思考控制方式+模型+任务提示词摘要」隔离：
-        # 提示词是转写结果的决定因素，进缓存键使提示词迭代可复现。
-        # 目录惰性创建（首次读写时建）——纯解析等无缓存需求的转换
-        # 不在缓存目录留下空壳，也不要求缓存目录可写
+        # 目录惰性创建（首次读写时建）——纯解析等无缓存需求的转换不在缓存目录留下空壳，也不要求缓存目录可写
         self._prompt_dirs = {
             kind: cache_dir / "ocr" / _slug(
                 f"{config.vlm_thinking}--{config.vlm_model}"
@@ -100,8 +92,6 @@ class ImageAssetStore:
             )
             for kind in ("ocr", "alt")
         }
-        # URL 缓存按「存储端点+桶+前缀」隔离：换桶/端点/前缀后强制重新
-        # 上传，旧位置的 URL 不污染新位置的产出
         _dest = hashlib.sha1(
             f"{config.s3_endpoint_url}/{config.s3_bucket}"
             f"/{config.s3_key_prefix}".encode()

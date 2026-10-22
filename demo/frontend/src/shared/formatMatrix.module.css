@@ -1,0 +1,40 @@
+/* 格式矩阵共享样式：分组标签 + 扩展名 chips 的结构；
+   留白、圆角与分组标签列宽由使用方按各自版面给定 */
+
+.board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.group {
+  display: grid;
+  gap: var(--s-2);
+  align-items: baseline;
+}
+
+.label {
+  font-size: var(--t-xs);
+  font-weight: 650;
+  color: var(--ink-2);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+  min-width: 0;
+}
+
+.chip {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+  padding: 1px var(--s-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  background: var(--bg);
+  line-height: 1.5;
+}

@@ -29,7 +29,7 @@ def test_convert_writes_markdown(env_and_input, capsys):
 
 
 def test_output_flag_accepted_and_writes(env_and_input):
-    """--output flag 可解析、可落盘（图片块形态差异由 test_pipeline 矩阵覆盖）"""
+    """--output flag 可解析、可落盘"""
     src, out = env_and_input
     assert main([str(src), "-o", str(out), "--output", "url"]) == 0
     assert (out / (src.stem + ".md")).exists()

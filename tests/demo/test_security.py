@@ -4,9 +4,7 @@ from pathlib import Path
 
 
 def test_upload_filename_traversal_rejected(client):
-    """上传文件名带路径遍历（../../x.txt）：扩展名提取按最后一个点，
-    恶意路径形态不得 5xx、不得在临时目录越界落盘——被格式校验拒绝
-    或以 uuid 文件名安全落盘"""
+    """上传文件名带路径遍历（../../x.txt）：扩展名提取按最后一个点，恶意路径形态不得 5xx、不得在临时目录越界落盘——被格式校验拒绝或以 uuid 文件名安全落盘"""
     resp = client.post(
         "/api/tasks",
         files={"file": ("../../etc/passwd.txt", b"hello", "text/plain")},

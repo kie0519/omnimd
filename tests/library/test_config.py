@@ -105,8 +105,7 @@ def test_vlm_thinking_rejects_unknown(monkeypatch, tmp_path):
 def test_storage_is_on_demand(full_env, monkeypatch, tmp_path):
     """存储按需必填：产出不含 url 部件（base64 内嵌）可不配存储运行。
 
-    VLM 凭据三项齐全 + 无任何存储变量 → 构造成功（存储客户端延迟到
-    产出含 url 部件时才构造），此时要求 url 产出则报错并提示配置方法。
+    VLM 凭据三项齐全 + 无任何存储变量 → 构造成功（存储客户端延迟到产出含 url 部件时才构造），此时要求 url 产出则报错并提示配置方法。
     """
     monkeypatch.setenv("OUTPUT", "body,base64,ocr")
     monkeypatch.setenv("CACHE_DIR", str(tmp_path))
@@ -127,7 +126,7 @@ def test_storage_is_on_demand(full_env, monkeypatch, tmp_path):
 
 
 def test_load_invalid_numeric_env(full_env, monkeypatch):
-    """非法整数变量报 ConfigError（变量名 + 当前值），不是裸 ValueError"""
+    """非法整数变量报 ConfigError，不是裸 ValueError"""
     monkeypatch.setenv("VLM_CONCURRENCY", "eight")
     with pytest.raises(ConfigError) as e:
         load()

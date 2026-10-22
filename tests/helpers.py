@@ -1,6 +1,6 @@
 """跨形态共享的测试工具：哑凭据环境与哑配置工厂。
 
-按产品形态分目录后（library / cli / demo），测试文件经包路径导入：
+测试目录按形态分（library / cli / demo），共享工具经包路径导入：
 `from tests.helpers import make_config, REQUIRED_ENV`
 """
 

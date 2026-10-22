@@ -1,10 +1,9 @@
 """文件存储抽象层
 
-统一契约：upload_image(image_data, filename) -> 公开 URL。
-VLM 通过该 URL 拉取图片——存储与转写（视觉模型）两层完全解耦。
+统一契约：upload_image(image_data, filename) -> 公开 URL（VLM 端点据此拉取图片）。
 
 STORAGE_PROVIDER 的合法取值与各后端的必填变量都在本层校验：
-未知取值或缺必填变量时构造即报错，报错信息列出全部可选项。
+未知取值或缺必填变量时构造即报错。
 """
 from ..config import Config
 from ..exceptions import ConfigError

@@ -28,8 +28,7 @@ def _collect_inputs(paths: list[str]) -> list[Path]:
     for p in paths:
         path = Path(p)
         if path.is_dir():
-            # 跳过点前缀隐藏文件（.DS_Store / desktop.ini 等系统杂质），
-            # 不让单个杂质文件废掉整批转换；可见文件仍显式报错
+            # 跳过点前缀隐藏文件（.DS_Store / desktop.ini 等系统杂质），不让单个杂质文件废掉整批转换；可见文件仍显式报错
             files.extend(sorted(f for f in path.iterdir()
                                 if f.is_file() and not f.name.startswith(".")))
         elif path.is_file():
@@ -101,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     from .converter import Converter
     converter = Converter(config)
     exit_code = 0
-    assigned: dict[Path, Path] = {}   # 输入路径 → 产出路径（批内分配登记）
+    assigned: dict[Path, Path] = {}
     for file_path in files:
         logger.info("开始转换: %s", file_path.name)
         try:
@@ -122,13 +121,10 @@ def main(argv: list[str] | None = None) -> int:
 def _assign_target(out_dir: Path, file_path: Path, assigned: dict[Path, Path]) -> Path:
     """产出路径分配：同批内输入路径唯一决定产出名。
 
-    - 首见输入 → {stem}.md；不同输入撞名（a.pdf 与 a.docx）→ 后来者
-      追加序号（{stem}-1.md），序号只消解批内碰撞；
-    - 同一输入重复出现（路径相同）→ 复用首次分配的产出名，重复转换
-      的结果覆盖写入，不产生 -1-2-3 连续序号副本。
+    - 首见输入 → {stem}.md；不同输入撞名（a.pdf 与 a.docx）→ 后来者追加序号（{stem}-1.md），序号只消解批内碰撞；
+    - 同一输入重复出现（路径相同）→ 复用首次分配的产出名，重复转换的结果覆盖写入，不产生 -1-2-3 连续序号副本。
 
-    跨次运行的重跑语义由此天然成立：每次运行都是新分配表，同一输入
-    再次运行仍拿 {stem}.md，覆盖即「刷新产出」。"""
+    跨次运行的重跑语义由此天然成立：每次运行都是新分配表，同一输入再次运行仍拿 {stem}.md，覆盖即「刷新产出」。"""
     if file_path in assigned:
         return assigned[file_path]
     stem = file_path.stem

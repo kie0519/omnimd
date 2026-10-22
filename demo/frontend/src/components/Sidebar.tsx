@@ -1,8 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TaskSummary } from "../types";
 import TaskItem from "./TaskItem";
 import { IcHelp, IcX } from "./Icons";
 import s from "./Sidebar.module.css";
+
+/** 抽屉形态断点：< 900px 时侧栏退化为抽屉（与样式表媒体查询同口径） */
+const NARROW_QUERY = "(max-width: 899px)";
 
 interface Props {
   tasks: TaskSummary[];
@@ -54,29 +57,31 @@ export default function Sidebar({
 }: Props) {
   const searchRef = useRef<HTMLInputElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
+  const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW_QUERY).matches);
 
   // 抽屉打开时焦点圈入（窄屏）；桌面 open 恒为 false 不触发
   useEffect(() => {
     if (open) searchRef.current?.focus();
   }, [open]);
 
-  // 全局快捷键信号：Ctrl/⌘+K → 聚焦搜索框（窄屏时 App 已先开抽屉）
+  // 全局快捷键信号：Ctrl/⌘+K → 聚焦搜索框
   useEffect(() => {
     if (focusSignal > 0) searchRef.current?.focus();
   }, [focusSignal]);
 
-  // 窄屏关闭态移出 Tab 序（滑出屏外但仍在 DOM 中承载过渡动画）；
-  // 桌面态（≥ 900px）侧栏常驻不受 open 影响。跨断点拉宽时重算——
-  // 否则窄屏关抽屉后拉宽，侧栏保持 inert 且无法再打开抽屉
   useEffect(() => {
-    const apply = () => {
-      if (sidebarRef.current)
-        sidebarRef.current.inert = !open && window.innerWidth < 900;
-    };
-    apply();
-    window.addEventListener("resize", apply);
-    return () => window.removeEventListener("resize", apply);
-  }, [open]);
+    const mq = window.matchMedia(NARROW_QUERY);
+    const sync = () => setNarrow(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  // 窄屏关闭态移出 Tab 序（滑出屏外但仍在 DOM 中承载过渡动画）；
+  // 桌面态（≥ 900px）侧栏常驻不受 open 影响
+  useEffect(() => {
+    if (sidebarRef.current) sidebarRef.current.inert = !open && narrow;
+  }, [open, narrow]);
 
   const groups: { label: string; items: TaskSummary[] }[] = [];
   for (const t of tasks) {
@@ -95,7 +100,7 @@ export default function Sidebar({
       />
       <aside ref={sidebarRef} className={`${s.sidebar} ${open ? s.open : ""}`} aria-label="历史记录">
         <div className={s.brand}>
-          {/* 产品 LOGO（public/logo.svg，与浏览器图标同源）；装饰图——
+          {/* 产品 LOGO（public/logo.svg）；装饰图——
               品牌名由相邻 wordmark 文本提供 */}
           <img className={s.mark} src="/logo.svg" width={26} height={26} alt="" aria-hidden="true" />
           <span className={s.wordmark}>omnimd</span>

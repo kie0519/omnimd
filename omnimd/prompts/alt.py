@@ -1,7 +1,6 @@
 """图片 alt 文本提示词
 
-为产出 Markdown 中的图片链接生成一句话描述，填入 alt 位——概括
-可见主体，与完整转写（ocr.py）按消费方分工，信息量不重叠。
+为产出 Markdown 中的图片链接生成一句话描述，填入 alt 位——只写一句话身份，不做完整转写。
 """
 
 ALT_SYSTEM_PROMPT = """You write alt text for images embedded in Markdown \

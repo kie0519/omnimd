@@ -12,9 +12,8 @@ interface Props {
 
 /**
  * 使用指南（只读）：怎么用 / 参数怎么配 / 限制与隐私。
- * 连接配置不在界面上编辑——连接配置只读服务端 .env；
- * 面板只解释配置在哪、有哪些配置项。产出组成是上传时可选的运行参数，
- * 在上传区选择，不在此面板操作。
+ * 面板只解释配置在哪、有哪些配置项，不提供连接配置编辑；
+ * 产出组成是上传时可选的运行参数，在上传区选择，不在此面板操作。
  */
 export default function HelpPanel({ open, onClose, formats }: Props) {
   const panelRef = useRef<HTMLElement>(null);
@@ -49,7 +48,6 @@ export default function HelpPanel({ open, onClose, formats }: Props) {
         </header>
 
         <div className={s.body}>
-          {/* ── 怎么用 ── */}
           <section className={s.section}>
             <h3 className={s.sectionTitle}>怎么用</h3>
             <ol className={s.flow}>
@@ -72,7 +70,6 @@ export default function HelpPanel({ open, onClose, formats }: Props) {
             </p>
           </section>
 
-          {/* ── 参数怎么配 ── */}
           <section className={s.section}>
             <h3 className={s.sectionTitle}>参数怎么配</h3>
             <p className={s.note}>
@@ -132,7 +129,6 @@ export default function HelpPanel({ open, onClose, formats }: Props) {
             </p>
           </section>
 
-          {/* ── 限制与隐私 ── */}
           <section className={s.section}>
             <h3 className={s.sectionTitle}>限制与隐私</h3>
             <ul className={s.list}>
@@ -143,7 +139,6 @@ export default function HelpPanel({ open, onClose, formats }: Props) {
             </ul>
           </section>
 
-          {/* ── 支持格式 ── */}
           <section className={s.section}>
             <h3 className={s.sectionTitle}>支持格式</h3>
             <p className={s.note}>

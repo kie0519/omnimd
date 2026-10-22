@@ -51,7 +51,7 @@
 
 ### 2.1 engines/（解析引擎）
 
-- `__init__.py`：`resolve_engine(suffix, doc_engine)` 路由——图片与 PDF 固定路由（语义唯一）；其余按 DOC_ENGINE 选择，不支持的格式回退另一引擎（格式面取并集）。注册表只持有引擎的定位信息（模块/类名/格式面），引擎模块在首次解析时才导入
+- `__init__.py`：`resolve_engine(suffix, doc_engine)` 路由——图片与 PDF 固定路由（语义唯一）；其余按 DOC_ENGINE 选择，不支持的格式回退另一引擎（格式面取并集）。注册表只持有引擎的定位信息（模块/类名/格式面），引擎模块在首次解析时导入
 - `image_engine.py`：单张图片输入——图片注册为占位符，产出形态与文档内嵌图片一致
 - `base.py`：契约 `convert(file_path, store) -> str`。图片出口只有两种形态——占位符（引擎直接注册）或 data URI（converter 接管），引擎不落盘
 - `pymupdf_engine.py`：PDF 专线。`embed_images=True` 图片直接内嵌正文（不落盘，源文件名的特殊字符不影响产出）、`use_layout(False)` Windows 兼容、picture-text 标记清理
@@ -125,7 +125,7 @@ CLI 只覆盖运行参数（产出组成/并发/缓存目录），不提供端�
 | 含转写/描述的转换（无 url 部件，base64 传图） | + openai SDK（不加载 boto3，也不依赖存储） |
 
 引擎注册表只持有定位符（模块路径/类名/格式面声明），`resolve_engine`
-解析成功后才导入引擎模块；支持格式声明归注册表所有，引擎类不重复声明。
+解析成功后导入引擎模块；支持格式声明归注册表所有，引擎类不重复声明。
 
 ## 六、代码地图
 

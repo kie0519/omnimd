@@ -140,7 +140,7 @@ export function IcHelp({ size, className }: IconProps) {
   );
 }
 
-/* ---- 文件类型图标（任务列表与结果区共用） ---- */
+/* ---- 文件类型图标 ---- */
 
 function IcFileDoc({ size, className }: IconProps) {
   return (
@@ -153,7 +153,7 @@ function IcFileDoc({ size, className }: IconProps) {
   );
 }
 
-/** 文档文件（流程步骤与文件图标共用） */
+/** 文档文件 */
 export { IcFileDoc };
 
 function IcFileImage({ size, className }: IconProps) {

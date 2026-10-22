@@ -2,7 +2,7 @@
 
 STORAGE_PROVIDER 的合法取值与「每个后端需要什么配置」都定义在这里：
 各后端在 REQUIRED_ENV_VARS 中声明自己的必填变量，工厂按声明校验。
-新增后端 = 子类 + 声明 + 工厂注册一行，配置校验不用改。
+新增后端 = 子类 + 声明 + 工厂注册一行。
 """
 from abc import ABC, abstractmethod
 

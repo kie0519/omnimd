@@ -1,15 +1,10 @@
 """OpenAI 兼容 VLM 公共骨架
 
-VLM 层只实现一种协议：OpenAI Chat Completions + image_url 内容块
-（公开 URL 与 base64 data URI 两种标准形式，传哪种由 converter 按产
-出组成推导，本层不做选择）。思考控制方式由 VLM_THINKING 配置选择
-（见 thinking.py）。
+VLM 层只实现一种协议：OpenAI Chat Completions + image_url 内容块（公开 URL 与 base64 data URI 两种标准形式，本层对两种形态等价透传，不做选择）。
+思考控制方式由 VLM_THINKING 配置选择（见 thinking.py）。
 
-本层是瘦客户端：调用并返回文本内容，API 异常透传不改写；内容为空
-的处置不在本层——由管线按图片失败渲染（链接/内嵌照常、文本位写
-失败提示）。唯一例外：URL 传图被端点拒绝（Ollama 等本地端点不支持
-服务端取图）是确定性的端点能力边界，改写为带两条出路的指引报错
-（换 base64 部件或换端点）。
+本层是瘦客户端：调用并返回文本内容，API 异常透传不改写；内容为空的处置不在本层。
+唯一例外：URL 传图被端点拒绝（Ollama 等本地端点不支持服务端取图）是确定性的端点能力边界，改写为指引报错。
 """
 import re
 
@@ -30,8 +25,7 @@ from .thinking import THINKING_EXTRA_BODY
 _ALT_MAX_TOKENS = 512
 
 # 端点不支持 URL 传图的错误特征（Ollama 实测文案：
-# "image URLs are not currently supported, please use base64 encoded
-#  data instead"）；匹配小写化的错误文本
+# "image URLs are not currently supported, please use base64 encoded data instead"）；匹配小写化的错误文本
 _URL_UNSUPPORTED_MARKERS = (
     re.compile(r"image url.{0,40}not.{0,20}support"),
     re.compile(r"use base64"),
@@ -66,8 +60,7 @@ class OpenAICompatVlm(VlmClient):
     ) -> str:
         """单次视觉任务，返回文本内容（空白归一为空串）。
 
-        image_ref 是公开 URL 或 base64 data URI；API 异常原样上抛，
-        唯一例外是 URL 传图被端点拒绝——改写为指引报错。
+        image_ref 是公开 URL 或 base64 data URI；API 异常原样上抛，唯一例外是 URL 传图被端点拒绝——改写为指引报错。
         """
         try:
             response = self.client.chat.completions.create(
@@ -97,8 +90,7 @@ class OpenAICompatVlm(VlmClient):
                     "②换支持 URL 传图的云端端点。"
                 ) from exc
             raise
-        # choices 可能为空（内容过滤、部分网关的错误语义）——按空内容处置，
-        # 与 content 为 None 同走图片失败渲染
+        # choices 可能为空（内容过滤、部分网关的错误语义）——按空内容处置
         content = response.choices[0].message.content if response.choices else None
         return (content or "").strip()
 

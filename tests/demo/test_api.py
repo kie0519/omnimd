@@ -1,7 +1,6 @@
 """demo API 契约回归：端点行为、output 校验、任务状态机。
 
-转换器与夹具见同目录 conftest.py（stub 替换——不依赖真实引擎、存储与模型）；
-断言依据的接口行为定义见 demo/README.md §接口行为。
+转换器与夹具见同目录 conftest.py（stub 替换——不依赖真实引擎、存储与模型）。
 """
 import time
 
@@ -96,8 +95,7 @@ def test_delete_missing_returns_404(client):
 
 
 def test_unknown_api_path_404_all_methods(client):
-    """未知 /api 路径对全部方法返回 404 JSON——API 命名空间由子应用
-    自负其责，不落入 SPA 静态回退（GET 拿 200 HTML、DELETE 拿 405 都错）"""
+    """未知 /api 路径对全部方法返回 404 JSON——API 命名空间由子应用自负其责，不落入 SPA 静态回退（GET 拿 200 HTML、DELETE 拿 405 都错）"""
     for method in ("get", "delete", "put", "post"):
         resp = getattr(client, method)("/api/no-such-endpoint")
         assert resp.status_code == 404, method

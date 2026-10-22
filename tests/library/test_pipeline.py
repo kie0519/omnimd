@@ -175,8 +175,8 @@ def test_url_part_vlm_ref_is_public_url(monkeypatch, tmp_path, probe_png):
 
 
 def test_empty_result_not_cached_allows_retry(monkeypatch, tmp_path, probe_png):
-    """空转写/空描述不落缓存：成功转写按提示词契约必非空，空串即失败
-    产物，不缓存以免固化失败；非空结果正常缓存，重跑不再调用"""
+    """空转写/空描述：空串即失败产物，不缓存以免固化失败；
+    非空结果正常缓存，重跑不再调用"""
     class EmptyVision:
         def __init__(self):
             self.calls = 0

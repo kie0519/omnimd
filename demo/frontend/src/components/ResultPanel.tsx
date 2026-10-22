@@ -81,7 +81,6 @@ export default function ResultPanel({ task, loading, view, onViewChange }: Props
       <span role="status" aria-live="polite" className={s.srOnly}>
         {announce ? "转换完成" : ""}
       </span>
-      {/* 标题条：身份（图标 + 文件名 + 状态）居左，统计（图片/字符/耗时/大小）靠右 */}
       <header className={s.header}>
         <span className={s.icon} aria-hidden="true">
           <FileIcon name={task.filename} size={18} />
@@ -115,7 +114,6 @@ export default function ResultPanel({ task, loading, view, onViewChange }: Props
         )}
       </div>
 
-      {/* 操作条：仅 done */}
       {task.status === "done" && task.markdown !== null && (
         <footer className={s.footer}>
           <div
@@ -158,9 +156,8 @@ export default function ResultPanel({ task, loading, view, onViewChange }: Props
   );
 }
 
-/** 产出组成形态标签：非缺省（纯解析 body）且非全形态（body,url,ocr,alt）
- *  时显示组合概要。output 是后端规范序 CSV；纯解析是缺省态不标（图片数
- *  为 0 已可区分），全形态不标（完整产出无需标注） */
+/** 产出组成形态标签：非缺省（纯解析 body）且非全形态（body,url,ocr,alt）时显示组合概要。
+ *  output 是后端规范序 CSV；纯解析是缺省态不标（图片数为 0 已可区分），全形态不标（完整产出无需标注） */
 function outputLabel(output: string): string[] {
   const parts = output.split(",");
   if (parts.length <= 2) {
@@ -175,7 +172,7 @@ function outputLabel(output: string): string[] {
   return [`${presentation}+${content}`];
 }
 
-/** 完成态统计：标题条右端的紧凑元数据行（图片/字符/耗时/大小 + 转写复用标识） */
+/** 完成态统计 */
 function MetadataBand({ task }: { task: TaskDetail }) {
   return (
     <span className={s.meta}>
@@ -232,7 +229,7 @@ function RunningState({ status, createdAt }: { status: string; createdAt: string
   );
 }
 
-/** 标题条与内容区共用的实时计时（tabular-nums 防抖动） */
+/** 实时计时（tabular-nums 防抖动） */
 function LiveSeconds({ createdAt }: { createdAt: string }) {
   const sec = useLiveSeconds(true, createdAt);
   return <span className="numeric">{sec}</span>;

@@ -1,6 +1,5 @@
 #!/bin/bash
-# omnimd demo 服务脚本（仓库根执行；跨平台：Linux / macOS / Windows Git Bash，
-# 本地与服务器同一份脚本同一套命令）
+# omnimd demo 服务脚本（仓库根执行；跨平台：Linux / macOS / Windows Git Bash，本地与服务器同一份脚本同一套命令）
 #
 # 用法: ./start.sh [start|stop|status|logs]
 #   start（缺省）  以当前代码运行服务：未运行则启动，已运行则重启
@@ -8,12 +7,10 @@
 #   status         查看运行状态与健康检查（只读）
 #   logs           跟随后端日志（只读）
 #
-# 可用环境变量覆盖：PORT（后端端口，缺省 8300）、APP_HOST（监听地址，缺省
-# 127.0.0.1）、PYTHON（Python 解释器，缺省自动探测 python / python3）
+# 可用环境变量覆盖：PORT（后端端口，缺省 8300）、APP_HOST（监听地址，缺省 127.0.0.1）、PYTHON（Python 解释器，缺省自动探测 python / python3）
 #
-# 跨平台说明：进程与端口探测按 lsof → ss → netstat 逐级退化（Git Bash 无
-# lsof，用 Windows netstat；Linux 无 lsof 时用 ss）；停止服务时按进程树
-# 递归终止，脱离进程树的残留进程按端口归属反查清理
+# 跨平台说明：进程与端口探测按 lsof → ss → netstat 逐级退化（Git Bash 无 lsof，用 Windows netstat；Linux 无 lsof 时用 ss）；
+# 停止服务时按进程树递归终止，脱离进程树的残留进程按端口归属反查清理
 set -u   # 未定义变量即错：拼错的变量名在启动时就暴露，不静默展开为空
 
 # 本脚本使用 bash 语法（数组等），用 sh 执行时给出正确执行方式
@@ -35,8 +32,8 @@ BACKEND_LOG="$LOGS_DIR/backend.log"
 PORT="${PORT:-8300}"
 APP_HOST="${APP_HOST:-127.0.0.1}"
 DIST_DIR="$FRONTEND_DIR/dist"
-# 依赖安装戳：记录上次 npm install 完成时刻。放在 node_modules 里——
-# 目录被删/被 npm ci 清空时戳随之消失，自然触发重装，无需额外清理
+# 依赖安装戳：记录上次 npm install 完成时刻。
+# 放在 node_modules 里——目录被删/被 npm ci 清空时戳随之消失，自然触发重装，无需额外清理
 NPM_STAMP="$FRONTEND_DIR/node_modules/.omnimd-install-stamp"
 
 # ── 解释器探测（Linux 发行版常只有 python3）──────────────
@@ -54,9 +51,8 @@ fi
 
 # ── 进程与端口管理 ────────────────────────────────────────
 
-# PID 的命令行（空输出 = 进程不存在或不可查）。重定向顺序：stderr 抑制
-# 须在 < 之前建立，否则 /proc 打开失败的报错会泄到终端（Windows 无
-# /proc，此路径常态触发）
+# PID 的命令行（空输出 = 进程不存在或不可查）。
+# 重定向顺序：stderr 抑制须在 < 之前建立，否则 /proc 打开失败的报错会泄到终端（Windows 无 /proc，此路径常态触发）
 proc_cmdline() {
     local pid="$1"
     tr '\0' ' ' 2>/dev/null < "/proc/$pid/cmdline" ||
@@ -66,8 +62,7 @@ proc_cmdline() {
     return 0
 }
 
-# 校验 PID 对应进程确为本应用（uvicorn）——防服务停止后 PID 被
-# 系统复用给无关进程时的误杀
+# 校验 PID 对应进程确为本应用（uvicorn）——防服务停止后 PID 被系统复用给无关进程时的误杀
 proc_is_ours() {
     proc_cmdline "$1" | grep -qi "uvicorn\|main:app"
 }
@@ -77,14 +72,13 @@ proc_is_launcher() {
     proc_cmdline "$1" | grep -q "start\.sh"
 }
 
-# 递归终止进程树。有 pgrep 时逐子进程递归；没有（Git Bash）且是 Windows
-# 时用 taskkill //T 整树终止；两者都不可用时退化为只杀主进程。树杀漏掉的
-# 由 do_stop 的端口归属反查兜底
+# 递归终止进程树。
+# 有 pgrep 时逐子进程递归；没有（Git Bash）且是 Windows 时用 taskkill //T 整树终止；两者都不可用时退化为只杀主进程。
+# 树杀漏掉的由 do_stop 的端口归属反查兜底
 kill_tree() {
     local pid="$1"
     [ -z "$pid" ] && return 0
-    # Git Bash 的 $! 是 MSYS pid，taskkill 只认 Windows pid——经 /proc
-    # 的 winpid 转换后再交 taskkill，否则整树终止静默失效
+    # Git Bash 的 $! 是 MSYS pid，taskkill 只认 Windows pid——经 /proc 的 winpid 转换后再交 taskkill，否则整树终止静默失效
     local winpid
     winpid=$(cat "/proc/$pid/winpid" 2>/dev/null || echo "$pid")
     if command -v pgrep >/dev/null 2>&1; then
@@ -110,8 +104,7 @@ kill_tree() {
 # 端口占用检测：lsof → ss（Linux 常见）→ netstat（Windows）→ curl 探活
 port_busy() {
     local port="$1"
-    # lsof 加 -sTCP:LISTEN：裸端口匹配会把到该端口的 ESTABLISHED 客户端
-    # 连接也算占用（macOS 有 lsof 的平台会误报）
+    # lsof 加 -sTCP:LISTEN：裸端口匹配会把到该端口的 ESTABLISHED 客户端连接也算占用（macOS 有 lsof 的平台会误报）
     if command -v lsof >/dev/null 2>&1 && lsof -ti :"$port" -sTCP:LISTEN >/dev/null 2>&1; then
         return 0
     fi
@@ -148,8 +141,7 @@ port_pid() {
 }
 
 # 按端口强杀（进程树杀不全时的兜底），并等待端口释放。
-# 仅当占端口进程确为本应用（uvicorn）时才杀——避免误伤
-# 恰好占用同一端口的无关服务；无法确认时提示人工处理。
+# 仅当占端口进程确为本应用（uvicorn）时才杀——避免误伤恰好占用同一端口的无关服务；无法确认时提示人工处理。
 kill_port() {
     local port="$1" pid
     pid=$(port_pid "$port")
@@ -167,8 +159,7 @@ kill_port() {
     return 1
 }
 
-# 健康探测地址：跟随 APP_HOST——绑 0.0.0.0 时本地回环仍可达，用
-# 127.0.0.1；绑具体网卡 IP 时只有该地址可达，必须用它探测
+# 健康探测地址：跟随 APP_HOST——绑 0.0.0.0 时本地回环仍可达，用 127.0.0.1；绑具体网卡 IP 时只有该地址可达，必须用它探测
 probe_host() {
     if [ "$APP_HOST" = "0.0.0.0" ] || [ "$APP_HOST" = "::" ]; then
         echo 127.0.0.1
@@ -177,8 +168,8 @@ probe_host() {
     fi
 }
 
-# 等待健康检查通过。进程中途退出（端口被非 HTTP 服务占用、依赖崩溃）
-# 时立刻打日志尾部失败——不干等满 30 秒才报一个无关的超时
+# 等待健康检查通过。
+# 进程中途退出（端口被非 HTTP 服务占用、依赖崩溃）时立刻打日志尾部失败——不干等满 30 秒才报一个无关的超时
 wait_healthy() {
     local url="http://$(probe_host):$PORT/api/health" pid="$1"
     for _ in $(seq 1 30); do
@@ -201,8 +192,7 @@ wait_healthy() {
 
 acquire_lock() {
     # 父目录（logs/）可能不存在（首跑/被清理）——先幂等就位；
-    # 锁目录本身必须用裸 mkdir：-p 在已存在时也返回成功，会破坏
-    # 「只有一个进程能创建」的原子性，锁就失效了
+    # 锁目录本身必须用裸 mkdir：-p 在已存在时也返回成功，会破坏「只有一个进程能创建」的原子性，锁就失效了
     mkdir -p "$LOGS_DIR"
     if mkdir "$LOCK_DIR" 2>/dev/null; then
         echo $$ > "$LOCK_DIR/pid"
@@ -248,13 +238,10 @@ check_node() {
     }
 }
 
-# 启动 uvicorn 并登记 PID 到 BACKEND_PID。服务进程必须脱离启动它的
-# 终端会话（关掉终端服务照常运行）：
-# - stdout/stderr 重定向日志文件、stdin 接 /dev/null——三个标准流全部
-#   与终端脱钩（终端关闭时管道断裂不会波及进程）
+# 启动 uvicorn 并登记 PID 到 BACKEND_PID。服务进程必须脱离启动它的终端会话（关掉终端服务照常运行）：
+# - stdout/stderr 重定向日志文件、stdin 接 /dev/null——三个标准流全部与终端脱钩（终端关闭时管道断裂不会波及进程）
 # - nohup 忽略 SIGHUP + disown 移出 shell 作业表——shell 退出不级联
-# PYTHONUTF8=1：Windows 下子进程缺省按 locale（GBK）写重定向输出，
-# 后端中文日志会乱码落盘——强制 UTF-8 与仓库文本编码一致
+# PYTHONUTF8=1：Windows 下子进程缺省按 locale（GBK）写重定向输出，后端中文日志会乱码落盘——强制 UTF-8 与仓库文本编码一致
 start_backend() {
     cd "$BACKEND_DIR"
     PYTHONUTF8=1 nohup "$PYTHON" -m uvicorn main:app \
@@ -267,16 +254,14 @@ start_backend() {
 
 # ── 前端依赖与构建（按需）──────────────────────────────────
 
-# 需要重新 npm install 吗：node_modules 缺失（首次/被清理），
-# 或 package-lock.json 比安装戳新（依赖版本变更过，如 git pull 之后）
+# 需要重新 npm install 吗：node_modules 缺失（首次/被清理），或 package-lock.json 比安装戳新（依赖版本变更过，如 git pull 之后）
 need_install() {
     [ -d "$FRONTEND_DIR/node_modules" ] || return 0
     [ -f "$NPM_STAMP" ] || return 0
     [ "$FRONTEND_DIR/package-lock.json" -nt "$NPM_STAMP" ]
 }
 
-# 按需安装依赖——新环境 clone 下来 ./start.sh 即一键启动；
-# lockfile 未变时静默跳过，日常启动零开销
+# 按需安装依赖——新环境 clone 下来 ./start.sh 即一键启动；lockfile 未变时静默跳过，日常启动零开销
 ensure_deps() {
     need_install || return 0
     check_node
@@ -330,8 +315,8 @@ ensure_frontend() {
 
 # ── PID 文件 ──────────────────────────────────────────────
 
-# 读 PID 文件（key=value 行）。只接受 word=digits 行——PID 文件是运行
-# 产物，内容被污染时按「无 PID 文件」处理，不 source 任意内容
+# 读 PID 文件（key=value 行）。
+# 只接受 word=digits 行——PID 文件是运行产物，内容被污染时按「无 PID 文件」处理，不 source 任意内容
 pids_read() {
     [ -f "$PID_FILE" ] || return 1
     if grep -qvE '^[a-z]+=[0-9]+$' "$PID_FILE"; then
@@ -401,8 +386,7 @@ do_status() {
     pids_read || true
     local pid
     pid=$(pid_of)
-    # PID 复用防护与 do_start/do_stop 同款：进程还在但已不是本应用时
-    # 报「未在运行」，不误报
+    # PID 复用防护：进程还在但已不是本应用时报「未在运行」，不误报
     if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && proc_is_ours "$pid"; then
         echo "[backend] 运行中 (PID: $pid)"
         if curl -sf -o /dev/null --max-time 2 "http://$(probe_host):$PORT/api/health" 2>/dev/null; then

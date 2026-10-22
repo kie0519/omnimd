@@ -1,4 +1,4 @@
-/* 使用指南：右侧抽屉，与历史抽屉同一交互语言（backdrop + 滑入 + Esc 关闭） */
+/* 使用指南：右侧抽屉（backdrop + 滑入 + Esc 关闭） */
 
 .panel {
   position: fixed;
@@ -131,7 +131,7 @@
   color: var(--ink-2);
 }
 
-/* 状态徽标内联示例（与 StatusBadge 同色语义，用文字级样式保持轻量） */
+/* 状态徽标内联示例：文字级样式，不挂载组件 */
 .badge {
   display: inline-block;
   padding: 0 6px;
@@ -195,44 +195,26 @@
   line-height: 1.7;
 }
 
-/* 格式矩阵（与首访页同一展示逻辑） */
+/* 格式矩阵 */
 .formatBoard {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-2);
+  composes: board from "../shared/formatMatrix.module.css";
   padding: var(--s-3);
-  border: 1px solid var(--line);
   border-radius: var(--r-1);
-  background: var(--surface);
 }
 
 .formatGroup {
-  display: grid;
+  composes: group from "../shared/formatMatrix.module.css";
   grid-template-columns: 56px 1fr;
-  gap: var(--s-2);
-  align-items: baseline;
 }
 
 .formatLabel {
-  font-size: var(--t-xs);
-  font-weight: 650;
-  color: var(--ink-2);
+  composes: label from "../shared/formatMatrix.module.css";
 }
 
 .formatChips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s-1);
-  min-width: 0;
+  composes: chips from "../shared/formatMatrix.module.css";
 }
 
 .formatChip {
-  font-family: var(--font-mono);
-  font-size: var(--t-xs);
-  color: var(--ink-2);
-  padding: 1px var(--s-1);
-  border: 1px solid var(--line);
-  border-radius: var(--r-1);
-  background: var(--bg);
-  line-height: 1.5;
+  composes: chip from "../shared/formatMatrix.module.css";
 }

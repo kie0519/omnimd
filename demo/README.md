@@ -1,7 +1,6 @@
 # omnimd demo
 
-任意文件 → Markdown 的最小完整产品演示：FastAPI 后端 + React 前端。
-单进程启动，一次走完「上传 → 转换 → 渲染 → 下载」全流程。
+任意文件 → Markdown 的最小完整产品演示：FastAPI 后端 + React 前端。单进程启动，一次走完「上传 → 转换 → 渲染 → 下载」全流程。
 
 ## 前置条件
 
@@ -20,12 +19,7 @@
 ./start.sh logs              # 跟随后端日志
 ```
 
-重复执行同一条命令是安全的：`start` 在服务已运行时自动重启，`stop` 在服务
-已停止时直接成功。脚本位于仓库根；本地与服务器、Linux / macOS /
-Windows Git Bash 均可运行。启动前做环境预检（Python / 后端依赖 /
-omnimd 库，缺失时给出修复命令），前端依赖与构建按需执行（日常启动零开销），
-启动后经健康检查确认就绪，异常退出的残留进程自动清理。可用 `PORT=8302` /
-`APP_HOST=0.0.0.0` / `PYTHON=python3` 环境变量覆盖缺省值。
+重复执行同一条命令是安全的：`start` 在服务已运行时自动重启，`stop` 在服务已停止时直接成功。脚本位于仓库根；本地与服务器、Linux / macOS /Windows Git Bash 均可运行。启动前做环境预检（Python / 后端依赖 /omnimd 库，缺失时给出修复命令），前端依赖与构建按需执行（日常启动零开销），启动后经健康检查确认就绪，异常退出的残留进程自动清理。可用 `PORT=8302` /`APP_HOST=0.0.0.0` / `PYTHON=python3` 环境变量覆盖缺省值。
 
 **方式二：手动**
 
@@ -45,10 +39,7 @@ cd demo/backend && python -m uvicorn main:app --port 8300
 ## 接口行为
 
 - `POST /api/tasks`：202 创建；`output` Form 字段为产出组成（五部件
-  规范序 CSV，缺省 `body` 纯解析），非法取值 / url 与 base64 同选 /
-  ocr·alt 缺呈现部件均 400（附完整可选取值）；不支持扩展名 400
-  （附完整支持列表）；空文件 400；超 50MB 400；并发占满
-  （running+pending ≥ 3）429
+  规范序 CSV，缺省 `body` 纯解析），非法取值 / url 与 base64 同选 /ocr·alt 缺呈现部件均 400（附完整可选取值）；不支持扩展名 400（附完整支持列表）；空文件 400；超 50MB 400；并发占满（running+pending ≥ 3）429
 - `GET /api/health`：`{"status": "ok"}`——纯探活，给部署检查与前端
   离线检测反复调用
 - `GET /api/formats`：`{"formats": [...]}`——支持格式（能力数据），

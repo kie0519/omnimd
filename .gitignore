@@ -40,3 +40,6 @@ demo/logs/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# 参考资料
+references/

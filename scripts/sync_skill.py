@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""sync_skill — 母本 skills/omnimd/ → 部署副本的一键同步。
+"""sync_skill — 母本 skills/omnimd/ → 部署副本的一键同步（仓库内单点）。
 
 流程：frontmatter 校验 → .env.example 对齐断言 → 复制 → 逐字节 diff 断言 → 冒烟自检（omnimd CLI 可用）。
 运行时产物（.env、__pycache__/）不参与同步、不删除。
 
 skill 是纯知识（SKILL.md 指令 + .env.example 模板），同步即整体复制。
 
-仓库的 skills/ 即部署源容器（与生态惯例同构：skills/<name>/SKILL.md），也可手动 cp -r skills/omnimd <目标>/.claude/skills/ 部署。
+仓库的 skills/ 即部署源容器（与生态惯例同构：skills/<name>/SKILL.md）。
+Claude Code 按会话工作目录加载 .claude/skills/——本仓的部署点是仓库内 .claude/skills/。
 
 用法（仓库根执行）：
-    python scripts/sync_skill.py [部署目标目录]
-    # 默认 <仓库上级>/.claude/skills/omnimd
+    python scripts/sync_skill.py            # 同步仓库内 .claude/skills/omnimd
+    python scripts/sync_skill.py <目录>     # 同步指定目标（手动部署到其它位置时用）
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SKILL_NAME = "omnimd"
 SKILL_DIR = ROOT / "skills" / SKILL_NAME
-DEFAULT_TARGET = ROOT.parent / ".claude" / "skills" / SKILL_NAME
+DEFAULT_TARGET = ROOT / ".claude" / "skills" / SKILL_NAME   # 仓库内（本仓会话加载）
 
 for _s in (sys.stdout, sys.stderr):
     try:
@@ -115,12 +116,12 @@ def main() -> int:
     assert_env_example_aligned()
     deploy(target)
     assert_identical(target)
-    smoke()
     extras = [str(p.relative_to(target)) for p in target.rglob("*")
               if p.is_file() and not _is_runtime_artifact(p)
               and not (SKILL_DIR / p.relative_to(target)).exists()]
     if extras:
         print(f"注意：目标目录存在母本外文件（确认是否过期残留）： {extras}")
+    smoke()
     print(f"同步完成 → {target}")
     return 0
 

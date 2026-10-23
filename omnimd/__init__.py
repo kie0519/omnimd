@@ -3,7 +3,7 @@
 任意文件转 Markdown：把各类文件转换为 Markdown——正文为必选锚点，
 图片链接、base64 内嵌、转写文本、描述文本四部件按需组合（全不选即纯解析），产出的文本可直接作为 coding agent 上下文、RAG 知识库语料。
 
-命令行用法见 README；作为 Python 库使用（与大模型 SDK 同构——先构造客户端，后转换）：
+命令行用法见 README；作为 Python 库使用：
 
     from omnimd import OmniMD, VlmConfig, S3Config
 
@@ -30,7 +30,7 @@ from .library import (
     VlmConfig,
 )
 
-__version__ = "2.0.1"
+__version__ = "2.0.2"
 
 __all__ = [
     "OmniMD", "VlmConfig", "S3Config",

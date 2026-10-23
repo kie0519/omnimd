@@ -30,7 +30,7 @@ PDF、Office 文档、图片等 38 种格式，统一转换为一份信息完整
 **图：系统架构**
 - 接入网关 → 业务核心：HTTPS，标注「同步调用」
 - 业务核心 → 数据层：PostgreSQL（持久化）与 Redis（缓存）两条连接线
-- 连接线样式难以区分，协议无法确定，标注 [?]
+- 各模块下方标注实例数：网关 ×2、核心 ×4、数据层 ×2
 - 各模块下方标注实例数：网关 ×2、核心 ×4、数据层 ×2
 ```
 
@@ -56,7 +56,7 @@ PDF、Office 文档、图片等 38 种格式，统一转换为一份信息完整
 
 - **产出按需组合**——正文必选锚点，图片链接、内嵌、转写文本、描述文本四部件自由搭配，全不选即纯解析
 - **38 种输入格式**——PDF 走图片保真管线，文档引擎可切换，图片直接输入
-- **转写按图分策略**——表格逐格、图表逐点、图示重建 Mermaid，不确定处标注 `[?]`
+- **转写按图分策略**——表格逐格、图表逐点、图示重建 Mermaid
 - **双层缓存**——同配置重跑，不调模型、不上传
 - **内容寻址去重**——同一张图只上传、转写一次，多处引用共享 URL
 - **三维可插拔**——引擎、模型、存储，切换只改 `.env`
@@ -115,7 +115,7 @@ omnimd <文件路径>.pdf -o output/ --output body,url,ocr   # 正文 + 图片�
 
 ### Python 库
 
-适合应用集成与数据管道。用法与大模型 SDK 一致：先构造客户端，连接配置一次配齐；后转换，`convert()` 只传文件与本次产出组成：
+适合应用集成与数据管道。使用节奏：构造客户端时一次配齐连接配置（缺省读环境变量 / .env），之后每次 `convert()` 只传文件与本次产出组成：
 
 ```python
 from omnimd import OmniMD, VlmConfig, S3Config
@@ -139,7 +139,7 @@ results = md.convert_many(["<文件路径>.pdf", "<输入目录>/"])  # 批量
 
 ### Claude Code skill
 
-适合在 Claude Code 对话里一句话转换文件——skill 部署后直接说「把这个 PDF 转成 Markdown」。skill 是纯指令形态（教 Agent 安装、配置与调用 `omnimd` 命令，工具本体经 pip 分发），目录在本仓库 [skills/omnimd/](https://github.com/kie0519/omnimd/tree/main/skills/omnimd)，复制到 Claude Code 的 skill 目录即可使用：用户级 `~/.claude/skills/`（任意会话可用）或项目级 `<项目>/.claude/skills/`。仓库内开发可一键部署：
+适合在 Claude Code 对话里一句话转换文件——skill 部署后直接说「把这个 PDF 转成 Markdown」。skill 是纯指令形态（教 Agent 安装、配置与调用 `omnimd` 命令；工具本体发布在 PyPI），目录在本仓库 [skills/omnimd/](https://github.com/kie0519/omnimd/tree/main/skills/omnimd)，复制到 Claude Code 的 skill 目录即可使用：用户级 `~/.claude/skills/`（任意会话可用）或项目级 `<项目>/.claude/skills/`。仓库内开发可一键部署：
 
 ```bash
 python scripts/sync_skill.py            # 缺省 → <仓库上级>/.claude/skills/omnimd

@@ -1,6 +1,6 @@
 ---
 name: 功能建议
-about: 新格式支持、新产出部件、新集成形态
+about: 改进建议或新能力
 labels: ["enhancement"]
 ---
 

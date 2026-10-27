@@ -17,13 +17,13 @@
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-5c6470" alt="platform">
 </p>
 
-PDF、Office 文档、图片等 38 种格式，统一转换为一份信息完整的 Markdown：正文逐字保留，每张图片既有可点开的公开链接，也有可检索的转写文本。转换结果可直接进入 coding agent 的上下文、RAG 知识库与检索系统。
+PDF、Office 文档、图片等 38 种格式，统一转换为一份信息完整的 Markdown：正文逐字保留，图片既有可点开的公开链接或内嵌形态，也有可检索的转写文本。转换结果可直接进入 coding agent 的上下文、RAG 知识库与检索系统。
 
 文档里最直观的信息往往以图片形式承载——架构图、界面截图、参数表。转换时若直接丢弃，模型与检索系统拿到的语料便不完整。omnimd 在解析之外补全图片链路：托管、转写、去重、缓存，让一份 Markdown 同时满足人读与机器读。
 
 ## 转换效果
 
-一份带架构图的 PDF（`--output body,url,ocr,alt`），转换后在图片位置产出：
+一份带架构图的 PDF（`--images link --transcribe --describe`），转换后在图片位置产出：
 
 ```markdown
 ![图片：系统架构图——三个模块的连接关系与数据流向](https://<存储域名>/<桶名>/<前缀><sha256>.png)
@@ -31,10 +31,9 @@ PDF、Office 文档、图片等 38 种格式，统一转换为一份信息完整
 - 接入网关 → 业务核心：HTTPS，标注「同步调用」
 - 业务核心 → 数据层：PostgreSQL（持久化）与 Redis（缓存）两条连接线
 - 各模块下方标注实例数：网关 ×2、核心 ×4、数据层 ×2
-- 各模块下方标注实例数：网关 ×2、核心 ×4、数据层 ×2
 ```
 
-一张柱状图（`--output body,url,ocr`），转换后逐点成为可检索的数据：
+一张柱状图（`--images link --transcribe`），转换后逐点成为可检索的数据：
 
 ```markdown
 ![图片](https://<存储域名>/<桶名>/<前缀><sha256>.png)
@@ -54,18 +53,20 @@ PDF、Office 文档、图片等 38 种格式，统一转换为一份信息完整
 
 ## 特性
 
-- **产出按需组合**——正文必选锚点，图片链接、内嵌、转写文本、描述文本四部件自由搭配，全不选即纯解析
+- **两组选项自由搭配**——图片怎么放（丢弃 / 链接 / 内嵌）与对图片做什么（转写 / 描述 / 自定义提示词）独立选择，全不传时按文件类型处理
+- **不带图片参数也能转**——文档只提取正文，不需要任何凭据；图片文件自动完整转写
+- **自定义图片任务**——`--prompt` 引用 `prompts/` 目录的任务文件或直接写一段提示词，走查、配色分析等任意意图开箱即得
 - **38 种输入格式**——PDF 走图片保真管线，文档引擎可切换，图片直接输入
 - **转写按图分策略**——表格逐格、图表逐点、图示重建 Mermaid
 - **双层缓存**——同配置重跑，不调模型、不上传
 - **内容寻址去重**——同一张图只上传、转写一次，多处引用共享 URL
-- **三维可插拔**——引擎、模型、存储，切换只改 `.env`
+- **引擎、模型、存储均可切换**——改 `.env` 即换端点，不改代码
 
 ## 环境要求
 
 - Python ≥ 3.10
-- 视觉模型（VLM）：任意 OpenAI 兼容端点（OpenAI / 智谱 GLM / 本地 Ollama / vLLM 等）；本地端点不含 url 部件即可用（base64 直传，天然兼容）
-- 对象存储：S3 兼容（MinIO / OBS / OSS / COS 等，自托管或云厂商）；产出不含 url 部件（base64 内嵌或纯解析）时不接触
+- 视觉模型（VLM）：任意 OpenAI 兼容端点（OpenAI / 智谱 GLM / 本地 Ollama / vLLM 等）；本地端点用 `--images embed` 即可（base64 直传，天然兼容）
+- 对象存储：S3 兼容（MinIO / OBS / OSS / COS 等，自托管或云厂商）；用 `--images link` 时需要，内嵌或不带图片参数时不接触
 
 ## 安装
 
@@ -78,22 +79,50 @@ pip install omnimd           # 或：uv tool install omnimd
 ## 快速开始
 
 ```bash
-omnimd <文件路径>.pdf -o output/                 # 单文件 → output/<文件名>.md（缺省纯解析）
+omnimd <文件路径>.pdf -o output/                 # 文档只提取正文，不需要任何配置
+omnimd <截图>.png -o output/                     # 图片自动完整转写（需要 .env 视觉模型配置）
 omnimd <输入目录>/ -o output/                    # 目录批处理，图片与文档可混排
-omnimd <文件路径>.pdf -o output/ --output body,url,ocr   # 正文 + 图片链接 + 转写文本
+omnimd <文件路径>.pdf -o output/ --images link --transcribe   # 正文 + 图片链接 + 转写文本
 ```
 
-## 产出组成
+## 图片怎么处理：两组选项
 
-| 部件 | 产出形态 | 依赖 | 成本 |
+**呈现——图片在产出里怎么放**（`--images`，缺省丢弃）：
+
+| 取值 | 产出形态 | 需要 | 成本 |
 |---|---|---|---|
-| `body` | 文件正文 Markdown（必选锚点，省略时自动包含） | 无 | 解析引擎 |
-| `url` | `![alt](图片公开链接)`——图片可看 | 存储；与 `base64` 互斥 | 上传（同图去重，重跑不再上传） |
-| `base64` | `![alt](data:image/...)`——图片内嵌自包含 | 与 `url` 互斥 | 产出体积膨胀 |
-| `ocr` | 图片下方的完整转写文本块——内容可检索 | 视觉模型；依赖 `url` 或 `base64` | 每图一次视觉模型调用 |
-| `alt` | 链接内的一句话描述文本——无障碍/检索锚点 | 视觉模型；依赖 `url` 或 `base64` | 每图一次视觉模型调用 |
+| （不传） | 图片不保留，只有文字 | 无 | 零 |
+| `link` | `![描述](公开链接)`——图片可看 | 对象存储 | 上传一次（同图去重，重跑不再上传） |
+| `embed` | `![描述](data:image/...)`——内嵌自包含 | 无 | 产出体积膨胀 |
 
-全不选即纯解析（仅 `body`）：仅提取正文，不调用模型、不依赖存储。
+**任务——对图片做什么**（可并存）：
+
+| 参数 | 产出 | 成本 |
+|---|---|---|
+| `--transcribe` | 每图完整转写——图片全部信息的 Markdown，内容可检索 | 每图一次模型调用 |
+| `--describe` | 每图一句话身份——填入图片链接的描述位（需 `--images`） | 每图一次模型调用 |
+| `--prompt <提示词或任务名>` | 提示词驱动——你说了算；可重复、可引用自定义任务 | 每任务每图一次调用 |
+
+两组选项自由组合：`--images link --transcribe`（知识库全量）、`--transcribe`（不留图，每图变文字的纯文本库）、`--images embed --prompt walk`（设计稿变走查文档）……各参数各自生效，组合就是效果相加。
+
+## 自定义图片任务
+
+一个任务就是一段提示词。三种来源按场景选：
+
+- **任务文件**——工作目录 `prompts/<任务名>.md`，正文写提示词，`--prompt <任务名>` 引用；frontmatter 可选 `name`（缺省文件名）与 `system`（缺省用内置通用骨架）。适合命名的、可复用的意图：
+
+  ````markdown
+  ---
+  name: walk
+  system: |
+    你是资深 UI/UX 走查专家，只陈述界面可见内容。
+  ---
+  完整走查这个界面的布局结构、组件清单与配色体系……
+  ````
+- **即时提示词**——`--prompt "重点转写图表数值"`，一句话当场生效
+- **代码定义**——库侧 `TaskPrompt(name="walk", prompt="…")`，任务随代码管理
+
+文件定义同名任务可覆盖内置（提示词就是任务的本体）；`--transcribe` / `--describe` 是 `--prompt transcribe` / `--prompt describe` 的快捷写法——高频路径一键直达。
 
 ## 使用方式
 
@@ -104,9 +133,12 @@ omnimd <文件路径>.pdf -o output/ --output body,url,ocr   # 正文 + 图片�
 | 参数 | 说明 |
 |------|------|
 | `-o, --out-dir` | 输出目录（缺省 `docs/`）；同批同名冲突自动加序号，同名重跑时覆盖刷新 |
-| `--output` | 产出组成，逗号分隔多选：`body` 正文（必选锚点）/ `url` 图片公开链接 / `base64` 图片内嵌（与 url 互斥）/ `ocr` 转写文本 / `alt` 描述文本（ocr/alt 依赖 url 或 base64）；缺省读 `OUTPUT`，未设置时为 `body`（纯解析） |
-| `--concurrency` | 转写并发数，缺省读 `VLM_CONCURRENCY`（未配置时为 8） |
-| `--cache-dir` | 缓存目录（转写/URL 缓存），缺省读 `CACHE_DIR`（未配置为系统用户缓存目录） |
+| `--images` | 图片呈现：`link` 公开链接 / `embed` base64 内嵌；不传 = 丢弃图片只要文字 |
+| `--transcribe` | 完整转写每张图片（等价 `--prompt transcribe`） |
+| `--describe` | 一句话描述填入链接描述位（等价 `--prompt describe`；需 `--images`） |
+| `--prompt` | 以提示词驱动图片任务：值是任务名（内置或 `prompts/` 目录文件）时引用该任务，否则作为提示词文本即时生效；可重复 |
+| `--concurrency` | 图片任务并发数，缺省读 `VLM_CONCURRENCY`（未配置时为 8） |
+| `--cache-dir` | 缓存目录（任务产物/URL 缓存；相对路径相对当前目录），缺省读 `CACHE_DIR`（未配置为系统用户缓存目录） |
 | `-v` | 调试日志 |
 
 **支持格式**（38 种）：
@@ -115,10 +147,10 @@ omnimd <文件路径>.pdf -o output/ --output body,url,ocr   # 正文 + 图片�
 
 ### Python 库
 
-适合应用集成与数据管道。使用节奏：构造客户端时一次配齐连接配置（缺省读环境变量 / .env），之后每次 `convert()` 只传文件与本次产出组成：
+适合应用集成与数据管道。使用节奏：构造客户端时一次配齐连接配置（缺省读环境变量 / .env），之后每次 `convert()` 只传文件与本次的图片选项（参数与 CLI 同名同义）：
 
 ```python
-from omnimd import OmniMD, VlmConfig, S3Config
+from omnimd import OmniMD, VlmConfig, S3Config, TaskPrompt
 
 md = OmniMD()                               # 方式一：读环境变量 / .env
 md = OmniMD(                                # 方式二：显式传连接配置
@@ -127,12 +159,16 @@ md = OmniMD(                                # 方式二：显式传连接配置
                      access_key_id="<AK>", secret_access_key="<SK>"),
 )
 
-result = md.convert("<文件路径>.pdf")          # → ConversionResult
+result = md.convert("<文件路径>.pdf")          # → ConversionResult；不带图片参数时文档只提取正文
 result.markdown                              # 产出全文（str）
-result.images                               # 图片清单：sha256 / url / alt_text / ocr_text
+result.images                               # 图片清单：sha256 / url / texts（各任务产物）
 result.image_count, result.char_count, result.elapsed_ms   # 转换统计
-md.convert("<文件路径>.pdf", output="body,url")  # 本次产出组成：正文 + 图片公开链接
-results = md.convert_many(["<文件路径>.pdf", "<输入目录>/"])  # 批量
+md.convert("<手册>.pdf", images="link", transcribe=True)    # 正文 + 链接 + 转写
+
+walk = TaskPrompt(name="walk", prompt="完整走查这个界面的布局、组件与配色")
+md2 = OmniMD(tasks=[walk])                   # 任务随代码管理（prompt 可引用）
+md2.convert("<截图>.png", prompt=[walk, "重点看配色"])       # 任务可叠加
+results = md2.convert_many(["<文件路径>.pdf", "<输入目录>/"])  # 批量
 ```
 
 实例可重复使用；单文件失败在 `convert_many` 的结果中为异常对象，`convert` 抛 `OmniMDError` 子类（配置/格式错误）或上游原始异常。可运行示例见 [examples/](https://github.com/kie0519/omnimd/tree/main/examples)（脚本直调与服务化封装两种形态），完整接口说明见 [library.md](https://github.com/kie0519/omnimd/blob/main/docs/library.md)。
@@ -142,7 +178,7 @@ results = md.convert_many(["<文件路径>.pdf", "<输入目录>/"])  # 批量
 适合在 Claude Code 对话里一句话转换文件——skill 部署后直接说「把这个 PDF 转成 Markdown」。skill 是纯指令形态（教 Agent 安装、配置与调用 `omnimd` 命令；工具本体发布在 PyPI），目录在本仓库 [skills/omnimd/](https://github.com/kie0519/omnimd/tree/main/skills/omnimd)，复制到 Claude Code 的 skill 目录即可使用：用户级 `~/.claude/skills/`（任意会话可用）或项目级 `<项目>/.claude/skills/`。仓库内开发可一键部署：
 
 ```bash
-python scripts/sync_skill.py            # 缺省 → <仓库上级>/.claude/skills/omnimd
+python scripts/sync_skill.py            # 缺省 → 仓库内 .claude/skills/omnimd
 python scripts/sync_skill.py <目标目录>
 ```
 
@@ -166,20 +202,17 @@ python scripts/sync_skill.py <目标目录>
 
 ## 配置
 
-复制 [.env.example](https://github.com/kie0519/omnimd/blob/main/.env.example) 为 `.env` 填入密钥——每个变量的含义、可选值与缺省值都以该文件为准。纯解析（仅正文）无需任何密钥；产出含转写/描述时 VLM 凭据三项必填，首次此类转换时报错并列出全部缺失项。骨架：
+复制 [.env.example](https://github.com/kie0519/omnimd/blob/main/.env.example) 为 `.env` 填入密钥——每个变量的含义、可选值与缺省值都以该文件为准。`.env` 只放连接与环境（凭据、模型、思考方式、超时、并发、缓存）；图片怎么处理由命令参数决定——不带图片参数时任何环境跑出的结果都一样，纯文档转换不需要任何密钥；图片任务调用视觉模型时 VLM 凭据三项必填，首次此类转换时报错并列出全部缺失项。骨架：
 
 ```ini
-# ===== 视觉模型（产出含转写/描述时必填）=====
+# ===== 视觉模型（图片任务时必填）=====
 VLM_API_KEY=<密钥>
 VLM_BASE_URL=<接口地址>
 VLM_MODEL=<模型名>
-
-# ===== 产出组成 =====
-OUTPUT=body          # body / url / base64 / ocr / alt 逗号分隔多选；
-                     # url 与 base64 互斥，ocr/alt 依赖 url 或 base64；缺省 body（纯解析）
+VLM_TIMEOUT=300       # 单次调用超时（秒）
 ```
 
-存储按需配置：产出含 url 部件时需要；base64 内嵌或纯解析（仅 body）时可免。
+存储按需配置：`--images link` 时需要；用内嵌或不带图片参数时可免。
 
 `VLM_THINKING` 控制思考参数的下发方式——OpenAI 兼容生态有多种协议形态，取值与端点适配速查见 [.env.example](https://github.com/kie0519/omnimd/blob/main/.env.example)。两点说明：转写是提取任务，通常关闭思考（`*-off`）以省输出预算，开启（`*-on`）用于复杂图表的质量实验；OpenAI 官方推理模型（o 系 / GPT-5）要求 `max_completion_tokens` 而非 `max_tokens`，与本实现不兼容。
 
@@ -189,16 +222,18 @@ OUTPUT=body          # body / url / base64 / ocr / alt 逗号分隔多选；
 
 1. **解析**——正文提取为 Markdown。PDF 固定走 pymupdf4llm（页面图片保真导出），10 种图片格式固定走图片引擎，其余 27 种文档格式按 `DOC_ENGINE` 选定引擎
 2. **图片注册**——短边小于 60px 的装饰图丢弃；其余按 SHA-256 内容寻址去重，同一张图只处理一次，多处引用共享
-3. **上传与转写**——产出含 url 部件时图片并发上传至对象存储取得公开 URL；含 ocr/alt 部件时每图并发调用视觉模型，图以 URL 或 base64 传入（由产出组成推导：含 url 传 URL，否则传 base64；纯解析跳过本步）
-4. **渲染写出**——按产出组成拼装图片块，与正文合成写入输出目录
+3. **上传与任务**——`--images link` 时图片并发上传至对象存储取得公开 URL；指定了转写 / 描述 / `--prompt` 时每图并发调用视觉模型，图以 URL 或 base64 传入（link 传 URL，其余传 base64；既无 `--images` 也无任务时跳过本步）
+4. **渲染写出**——按呈现与任务拼装图片块或任务文本块，与正文合成写入输出目录
 
-成本模型：首次转换每图一次模型调用、一次上传（纯解析两者皆无）；同配置重跑由双层缓存全数命中，不调模型、不上传。缓存键按模型、思考控制方式、任务类型（转写 / 描述）与提示词摘要隔离——换模型即重转，改提示词即失效。设计细节见[架构文档](https://github.com/kie0519/omnimd/blob/main/docs/architecture.md)。
+成本模型：首次转换每任务每图一次模型调用、链接呈现再每图一次上传（纯解析两者皆无）；同配置重跑由双层缓存全数命中，不调模型、不上传。缓存按任务隔离（模型、思考控制方式、任务与提示词摘要进缓存键）——换模型即重转，改提示词即失效，同图不同任务不串缓存。设计细节见[架构文档](https://github.com/kie0519/omnimd/blob/main/docs/architecture.md)。
 
 ## 路线图
 
 | 方向 | 状态 |
 |---|---|
 | 文档与图片 → 信息完整的 Markdown（38 种格式） | ✅ 现已支持 |
+| 转写验证管线（转写与校对分离、代码裁决） | 规划中 |
+| 场景化任务包（走查、解读、提取、诊断、转码等预置任务文件） | 已随 Web 演示提供，PyPI 分发规划中 |
 | 音频转写（ASR 文本） | 规划中 |
 | 视频转写（抽帧描述 + 音轨转写） | 规划中 |
 

@@ -86,7 +86,7 @@ export default function ResultPanel({ task, loading, view, onViewChange }: Props
           <FileIcon name={task.filename} size={18} />
         </span>
         <h1 className={s.title} title={task.filename}>{task.filename}</h1>
-        {outputLabel(task.output).map((label) => (
+        {optionsLabel(task.options).map((label) => (
           <span key={label} className={s.compTag}>{label}</span>
         ))}
         <StatusBadge status={task.status} />
@@ -133,7 +133,7 @@ export default function ResultPanel({ task, loading, view, onViewChange }: Props
               onClick={() => handleViewChange("rendered")}
             >
               <IcEye size={14} />
-              渲染
+              阅读
             </button>
             <button
               type="button"
@@ -156,20 +156,28 @@ export default function ResultPanel({ task, loading, view, onViewChange }: Props
   );
 }
 
-/** 产出组成形态标签：非缺省（纯解析 body）且非全形态（body,url,ocr,alt）时显示组合概要。
- *  output 是后端规范序 CSV；纯解析是缺省态不标（图片数为 0 已可区分），全形态不标（完整产出无需标注） */
-function outputLabel(output: string): string[] {
-  const parts = output.split(",");
-  if (parts.length <= 2) {
-    // body 单独（缺省）或 body+单一呈现部件
-    if (parts.includes("url")) return ["仅链接"];
-    if (parts.includes("base64")) return ["仅内嵌"];
-    return [];
+/** 转换选项形态标签：非缺省且非全形态时显示组合概要。
+ *  options 是后端规范串（drop / link+transcribe+describe 形态）；缺省态不标
+ *  （产出形态本身可区分），全形态不标（完整产出无需标注） */
+function optionsLabel(options: string): string[] {
+  const parts = options.split("+");
+  const hasLink = parts.includes("link");
+  const hasEmbed = parts.includes("embed");
+  const hasTranscribe = parts.includes("transcribe");
+  const hasDescribe = parts.includes("describe");
+  const hasPrompt = parts.includes("prompt");
+  if (!hasLink && !hasEmbed) {
+    if (hasTranscribe)
+      return hasPrompt ? ["不留图 · 转写 · 自定义"] : ["不留图 · 转写"];
+    return hasPrompt ? ["不留图 · 自定义"] : [];
   }
-  if (parts.includes("ocr") && parts.includes("alt")) return [];  // 全形态（含内容双选）
-  const presentation = parts.includes("url") ? "链接" : "内嵌";
-  const content = parts.includes("ocr") ? "转写" : "描述";
-  return [`${presentation}+${content}`];
+  const tags: string[] = [];
+  if (hasTranscribe) tags.push("转写");
+  if (hasDescribe) tags.push("描述");
+  if (hasPrompt) tags.push("自定义");
+  if (hasTranscribe && hasDescribe) return [];   // 全形态（内容双选）不标
+  if (!tags.length) return [hasLink ? "仅链接" : "仅内嵌"];
+  return [`${hasLink ? "链接" : "内嵌"} · ${tags.join(" · ")}`];
 }
 
 /** 完成态统计 */
@@ -192,7 +200,7 @@ function MetadataBand({ task }: { task: TaskDetail }) {
         <span className={s.metaValue}>{formatSize(task.size_bytes)}</span>
         <span className={s.metaLabel}>大小</span>
       </span>
-      {task.cache_hit && <span className={s.cacheBadge}>⚡ 之前转过，直接复用</span>}
+      {task.cache_hit && <span className={s.cacheBadge}>⚡ 之前转过，直接用上次结果</span>}
     </span>
   );
 }
@@ -213,8 +221,8 @@ function RunningState({ status, createdAt }: { status: string; createdAt: string
         </p>
         <p className={s.runningHint}>
           {status === "pending"
-            ? "任务已受理，正在启动转换"
-            : "解析正文 · 转写图片 · 产出 Markdown"}
+            ? "已收到，正在启动转换"
+            : "解析正文 · 处理图片 · 产出 Markdown"}
         </p>
       </div>
       <div className={s.skeleton} aria-hidden="true">

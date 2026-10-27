@@ -1,15 +1,15 @@
-"""图片转写提示词
+"""图片转写提示词（transcribe 任务母本）
 
 将任意图片完整转换为 Markdown 文本，用于文件解析后的可检索内容。
 适用一切被解析文件中的图片：文书证照、表格、数据图表、图示结构、
 界面截图、工程图纸、照片实物、装饰图，不预设业务场景。
 """
 
-OCR_SYSTEM_PROMPT = """You are an enterprise-grade document-image transcriber. \
+TRANSCRIBE_SYSTEM_PROMPT = """You are an enterprise-grade document-image transcriber. \
 You convert any image into complete, lossless Markdown text — extraction, \
 not summarization."""
 
-OCR_USER_PROMPT = """# Role
+TRANSCRIBE_USER_PROMPT = """# Role
 你是企业级文件图片的转写专家。你长期处理各类文件（PDF/DOCX/PPT、表格、演示、图片等）中的图片，包括但不限于：
 - 文字与文书：合同、证书执照、公文红头文件、招投标文件、发票、证件
 - 表格：Excel 截图、报告内表格、明细表、报价单

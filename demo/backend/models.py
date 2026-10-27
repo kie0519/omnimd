@@ -17,7 +17,7 @@ class TaskSummary(BaseModel):
     task_id: str
     filename: str
     status: str                  # pending / running / done / failed
-    output: str                  # 产出组成（body,url,base64,ocr,alt 规范序 CSV，上传时选定）
+    options: str                 # 转换选项（图片保留方式与图片任务的规范串，如 link+transcribe，上传时选定）
     image_count: int | None = None    # done 时统计：产出中的图片块数
     char_count: int | None = None     # done 时统计：产出字符数
     elapsed_ms: int | None = None     # done/failed 时统计：转换耗时（failed 记录失败前耗时）
@@ -35,3 +35,5 @@ class TaskDetail(TaskSummary):
     size_bytes: int
     markdown: str | None = None
     error: str | None = None
+    prompt: str = ""                 # 自定义提示词原文（上传时填写的即时图片任务）
+    system: str = ""                 # 自定义系统提示词（空 = 内置通用骨架）

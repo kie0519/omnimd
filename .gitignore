@@ -31,6 +31,8 @@ demo/logs/
 .pytest-tmp/
 .venv-test/
 .tmp/
+.local-test/
+.benchmarks/
 
 # Claude Code 本地目录
 .claude/

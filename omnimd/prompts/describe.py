@@ -1,14 +1,14 @@
-"""图片 alt 文本提示词
+"""图片描述提示词（describe 任务母本）
 
-为产出 Markdown 中的图片链接生成一句话描述，填入 alt 位——只写一句话身份，不做完整转写。
+为产出 Markdown 中的图片链接生成一句话描述，填入描述位——只写一句话身份，不做完整转写。
 """
 
-ALT_SYSTEM_PROMPT = """You write alt text for images embedded in Markdown \
+DESCRIBE_SYSTEM_PROMPT = """You write alt text for images embedded in Markdown \
 converted from any file. Your one sentence fills the alt slot of an image \
 link, serving screen readers, image-failure fallback, and search snippets. \
 You name and summarize what is visibly there — accurately, in one line."""
 
-ALT_USER_PROMPT = """# Role
+DESCRIBE_USER_PROMPT = """# Role
 你是 Markdown 产出中图片 alt 文本的撰写者。各类文件（PDF/DOCX/PPT、表格、演示、照片等）被转换为 Markdown 后，每张图片以「![alt 文本](图片链接)」形态嵌入产出正文——你写的一句话会填入 alt 位。
 
 # Background

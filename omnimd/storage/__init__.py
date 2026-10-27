@@ -2,33 +2,27 @@
 
 统一契约：upload_image(image_data, filename) -> 公开 URL（VLM 端点据此拉取图片）。
 
-STORAGE_PROVIDER 的合法取值与各后端的必填变量都在本层校验：
-未知取值或缺必填变量时构造即报错。
+与 VLM 层同一形态：单协议（S3 兼容）+ 凭据直接接入，无厂商概念——
+S3_ENDPOINT_URL 留空 = 不使用存储；配置则五项齐全（缺一在构造时报全清单）。
+接入第二协议时再引入后端选择变量。
 """
 from ..config import Config
 from ..exceptions import ConfigError
 from .base import StorageUploader
 from .s3 import S3Uploader
 
-# STORAGE_PROVIDER 取值 → 实现类
-_PROVIDERS: dict[str, type[StorageUploader]] = {"s3": S3Uploader}
+__all__ = ["StorageUploader", "create_uploader"]
 
 
 def create_uploader(config: Config) -> StorageUploader:
-    """按 STORAGE_PROVIDER 构造存储后端，未支持的选择或缺配置直接报错"""
-    cls = _PROVIDERS.get(config.storage_provider)
-    if cls is None:
-        raise ConfigError(
-            f"不支持的 STORAGE_PROVIDER: {config.storage_provider}"
-            f"（可选：{', '.join(sorted(_PROVIDERS))}）"
-        )
+    """构造 S3 兼容存储客户端；必填变量缺一时报全清单。"""
     missing = [
-        name for name in cls.REQUIRED_ENV_VARS
+        name for name in S3Uploader.REQUIRED_ENV_VARS
         if not getattr(config, name.lower())
     ]
     if missing:
         raise ConfigError(
-            f"STORAGE_PROVIDER={config.storage_provider} 需要环境变量: "
-            f"{', '.join(missing)}，请在 .env 中配置。"
+            f"对象存储配置不完整，缺少: {', '.join(missing)}。"
+            "请在 .env 中配齐 S3_* 五项（S3 兼容端点，模板见 .env.example）。"
         )
-    return cls(config)
+    return S3Uploader(config)

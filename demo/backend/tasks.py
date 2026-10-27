@@ -25,7 +25,7 @@ _CACHE_HIT_MAX_MS = 2000
 
 _db: sqlite3.Connection | None = None
 _db_lock = threading.Lock()
-# 转换器实例，进程级共享：产出组成是每次 convert 的参数，一个实例服务全部任务
+# 转换器实例，进程级共享：转换选项是每次 convert 的参数，一个实例服务全部任务
 _md: OmniMD | None = None
 
 _SCHEMA = """
@@ -34,7 +34,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     filename      TEXT NOT NULL,
     size_bytes    INTEGER NOT NULL,
     status        TEXT NOT NULL,
-    output        TEXT NOT NULL DEFAULT 'body',  -- 产出组成（规范序 CSV）
+    options       TEXT NOT NULL DEFAULT 'drop',  -- 转换选项（图片保留方式与图片任务的规范串）
+    prompt        TEXT NOT NULL DEFAULT '',   -- 自定义提示词（即时图片任务的提示词文本）
+    system        TEXT NOT NULL DEFAULT '',   -- 自定义系统提示词（空 = 内置通用骨架）
     markdown      TEXT,
     error         TEXT,
     image_count   INTEGER,
@@ -113,7 +115,7 @@ _converter_lock = threading.Lock()
 def get_converter() -> OmniMD:
     """OmniMD 实例（进程级缓存，构造一次跨任务复用）。
 
-    产出组成是 convert 的每次参数——同一个实例服务全部任务，引擎与模型客户端在实例内共享；缓存为磁盘缓存，跨进程共享。
+    转换选项是 convert 的每次参数——同一个实例服务全部任务，引擎与模型客户端在实例内共享；缓存为磁盘缓存，跨进程共享。
     构造加锁：预热线程与首个请求线程并发时不会重复构造。
     """
     global _md
@@ -135,7 +137,7 @@ def prewarm() -> None:
             tmp.write_text("warmup", encoding="utf-8")
             get_converter().convert(tmp)
         except Exception:
-            logger.exception("转换器预热失败（首个任务将承担引擎导入成本）")
+            logger.exception("转换器预热失败（首个任务将承担初始化成本；配置错误时首个任务直接报错）")
         finally:
             tmp.unlink(missing_ok=True)
 
@@ -151,35 +153,69 @@ class ConcurrencyLimitError(Exception):
     """并发任务已满（由 INSERT 的原子计数判定）"""
 
 
-def create_task(filename: str, size: int, tmp_path: Path, output: str = "body") -> str:
+def create_task(
+    filename: str, size: int, tmp_path: Path, *,
+    images: str | None = None, transcribe: bool = False, describe: bool = False,
+    prompt: str = "", system: str = "",
+) -> str:
     """登记已落盘的上传文件为 pending 任务并投递工作线程，返回任务 ID。
 
-    调用方负责 output 取值校验与文件落盘。
+    调用方负责选项校验与文件落盘。
     并发上限判定并入同一条 INSERT（WHERE 子查询计数）——检查与插入原子，上传请求体读取时段的并发请求不会击穿上限。
     """
+    options = "+".join(
+        [images or "drop"]
+        + (["transcribe"] if transcribe else [])
+        + (["describe"] if describe else [])
+        + (["prompt"] if prompt else [])
+    )
     task_id = uuid.uuid4().hex
     try:
         cur = _write(
-            "INSERT INTO tasks (id, filename, size_bytes, status, output, created_at) "
-            "SELECT ?, ?, ?, 'pending', ?, replace(datetime('now'),' ','T') || 'Z' "
+            "INSERT INTO tasks (id, filename, size_bytes, status, options, prompt, system, created_at) "
+            "SELECT ?, ?, ?, 'pending', ?, ?, ?, replace(datetime('now'),' ','T') || 'Z' "
             "WHERE (SELECT COUNT(*) FROM tasks WHERE status IN ('pending','running')) < ?",
-            (task_id, filename, size, output, MAX_CONCURRENT),
+            (task_id, filename, size, options, prompt, system, MAX_CONCURRENT),
         )
         if cur.rowcount == 0:
-            raise ConcurrencyLimitError(f"并发任务已满（同时进行 ≤ {MAX_CONCURRENT}）")
+            raise ConcurrencyLimitError(f"同时进行的转换最多 {MAX_CONCURRENT} 个，现在已满。请等其中一个完成后再试。")
     except BaseException:
         tmp_path.unlink(missing_ok=True)   # 落库失败不遗留临时文件
         raise
-    threading.Thread(target=_run, args=(task_id, tmp_path, output), daemon=True).start()
+    threading.Thread(
+        target=_run,
+        args=(task_id, tmp_path, images, transcribe, describe, prompt, system),
+        daemon=True,
+    ).start()
     return task_id
 
 
-def _run(task_id: str, path: Path, output: str) -> None:
+def _run(
+    task_id: str, path: Path,
+    images: str | None, transcribe: bool, describe: bool,
+    prompt: str, system: str,
+) -> None:
     """工作线程：状态机推进与终态写入的唯一场所"""
     started = time.perf_counter()
     try:
         _write("UPDATE tasks SET status='running' WHERE id=?", (task_id,))
-        result = get_converter().convert(path, output=output)
+        if prompt:
+            # 即时任务单一构造形态：名从内容派生（编译层同规则，缓存目录一致），
+            # system 随任务进入缓存键 digest——system 差异天然隔离，互不污染
+            from omnimd import TaskPrompt
+            from omnimd.prompts import adhoc_task_name
+            item = TaskPrompt(
+                name=adhoc_task_name(prompt), prompt=prompt,
+                system=system or None,
+            )
+            result = get_converter().convert(
+                path, images=images, transcribe=transcribe,
+                describe=describe, prompt=[item],
+            )
+        else:
+            result = get_converter().convert(
+                path, images=images, transcribe=transcribe, describe=describe,
+            )
         markdown = result.markdown
         image_count = result.image_count
         elapsed_ms = result.elapsed_ms
@@ -198,10 +234,11 @@ def _run(task_id: str, path: Path, output: str) -> None:
     finally:
         path.unlink(missing_ok=True)   # 上传文件即用即删
 
-    # 图片文件 + 无视觉任务产出：单图只走注册+上传，亚秒即完成属常态，不参与命中判定（否则首转也显示「缓存命中」）
+    # 图片文件 + 无任何显式任务（自定义提示词也是任务；缺省注入转写视为任务）：
+    # 亚秒即完成可能是纯注册+上传，不参与命中判定
     is_image_input = path.suffix.lower() in IMAGE_EXTENSIONS
     eligible = image_count > 0 and not (
-        is_image_input and "ocr" not in output and "alt" not in output
+        is_image_input and not transcribe and not describe and not prompt
     )
     cache_hit = 1 if (elapsed_ms < _CACHE_HIT_MAX_MS and eligible) else 0
     _write(
@@ -225,7 +262,7 @@ def list_tasks(q: str = "", limit: int = 20, offset: int = 0) -> tuple[list[sqli
         params.append(f"%{q.lower()}%")
     total = _read(f"SELECT COUNT(*) AS n FROM tasks {where}", tuple(params))[0]["n"]
     rows = _read(
-        f"SELECT id, filename, status, output, image_count, char_count, "
+        f"SELECT id, filename, status, options, image_count, char_count, "
         f"elapsed_ms, cache_hit, created_at FROM tasks {where} "
         f"ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?",
         (*params, limit, offset),

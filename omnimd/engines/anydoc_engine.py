@@ -9,7 +9,7 @@ anydoc 的 to_markdown 对嵌入图片有损（只剩 alt 文本，alt 为空则
 - 嵌入图片 → store.register 注册进图片管线，正文留 @@IMG:{sha256}@@ 占位符
 - 正文结构（标题/表格/列表/公式/脚注/引用）→ 按 anydoc 序列化约定渲染
 
-即正文质量用 anydoc 的，图片托管与转写是本工具的。
+即正文质量用 anydoc 的，图片托管与图片任务是本工具的。
 """
 import logging
 import re
@@ -251,7 +251,7 @@ def _render_image(il, doc, store) -> str:
             registered = store.register(asset_obj.origin_part or asset_obj.media_type,
                                         asset_obj.data)
             return f"@@IMG:{registered.sha256}@@" if registered else ""
-        # 非图片资产（OLE 嵌入对象等）不可转写，保留 alt 描述
+        # 非图片资产（OLE 嵌入对象等）不进图片管线，保留其描述文本
         return il.alt or ""
     if source.kind == "external" and source.url:
         # 外链图已是公开 URL，保留链接，不进图片托管管线

@@ -1,4 +1,4 @@
-/* 首访主舞台：价值主张 + 上传热区 + 左右分区（流程内容 | 产出组成） */
+/* 首访主舞台：价值主张 + 上传热区 + 左右分区（流程内容 | 转换选项） */
 
 /* 一屏构造：wrap 填满 .work 高度，内容不足时垂直居中，上传热区弹性
    伸缩吸收剩余空间——布局连续适配任意视口高度，不靠断点切换 */
@@ -147,7 +147,7 @@
   }
 }
 
-/* ── 产出组成（上传时选定的唯一运行参数） ── */
+/* ── 转换选项（呈现三选 + 任务开关，上传时选定的唯一运行参数） ── */
 
 .options {
   grid-area: options;
@@ -175,7 +175,7 @@
   letter-spacing: 0.02em;
 }
 
-/* 纯解析提示：全不选时出现在标题行右侧（hover 解释语义） */
+/* 默认提示：不选任何选项时出现在标题行右侧（hover 解释按文件类型处理） */
 .pureParseHint {
   font-size: var(--t-xs);
   color: var(--ink-3);
@@ -183,14 +183,55 @@
 }
 
 .partRows {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: var(--s-2);
 }
 
+/* 自定义分析入口：任务行第三枚——已设置时显示提示词摘要（ellipsis 截断） */
+.partBtnPrompt {
+  flex: 1.5;
+  min-width: 0;
+}
+
+.partBtnText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .partRow {
-  display: flex;
+  display: contents;   /* 行容器让位给网格——四枚按钮直接落进 2×2 */
+}
+
+/* 选项卡头部右侧：默认徽标 + 自定义入口图标 */
+.headerRight {
+  display: inline-flex;
+  align-items: center;
   gap: var(--s-2);
+}
+
+.customIcon {
+  padding: 2px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-1);
+  background: var(--surface);
+  font-size: var(--t-s);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+
+.customIcon:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.customIconOn {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .partBtn {
@@ -214,9 +255,9 @@
   color: var(--accent);
 }
 
-/* 依赖未满足的锁定态：转写/描述在未选呈现时置灰。
+/* 依赖未满足的锁定态：描述在未选呈现时置灰（转写独立可用）。
    用 aria-disabled 而非 disabled——disabled 元素不派发鼠标事件，
-   hover 提示（"请先选择链接或内嵌"）在 Chromium 系不可见 */
+   hover 提示在 Chromium 系不可见 */
 .partBtnLocked {
   opacity: 0.45;
   cursor: not-allowed;
@@ -381,7 +422,7 @@
 }
 
 /* ── 短视口压缩档：配角让位，一屏保完整 ──
-   价值主张标题、上传热区、产出组成不动；让位顺序为说明文字与内边距。 */
+   价值主张标题、上传热区、转换选项区不动；让位顺序为说明文字与内边距。 */
 @media (max-height: 760px) {
   .stepDesc {
     display: none;

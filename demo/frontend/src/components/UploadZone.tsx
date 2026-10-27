@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { groupFormats, MAX_UPLOAD_MB } from "../format";
+import type { UploadOptions } from "../types";
 import { IcUpload, IcFileDoc, IcSparkle, IcMarkdown } from "./Icons";
+import PromptStudio from "./PromptStudio";
 import s from "./UploadZone.module.css";
 
 interface Props {
@@ -8,58 +10,106 @@ interface Props {
   formats: string[] | null;
   /** App 上传队列仍有在途/排队文件（提交期间锁定热区防重复） */
   submitting: boolean;
-  /** 批量上传入口：预检通过的文件交棒 App 槽位感知提交，output 为入队时定格的产出组成 */
-  onAccepted: (files: File[], output: string) => void;
+  /** 批量上传入口：预检通过的文件交棒 App 槽位感知提交，options 为入队时定格的转换选项 */
+  onAccepted: (files: File[], options: UploadOptions) => void;
 }
 
 
 /** 单次批量上限：防误拖整个目录压垮队列，超出提示分批 */
 const MAX_BATCH = 10;
 
-/** 产出组成选择记忆键（下次上传沿用） */
-const OUTPUT_STORAGE_KEY = "omnimd.output";
+/** 转换选项记忆键（下次上传沿用），值形如 link+transcribe+describe */
+const OPTIONS_STORAGE_KEY = "omnimd.options";
+/** 自定义提示词与系统提示词文本单独记忆（选项串只存 prompt 标记不存全文） */
+const PROMPT_STORAGE_KEY = "omnimd.prompt";
+const SYSTEM_STORAGE_KEY = "omnimd.system";
 
-/** 图片呈现部件（互斥单选：url=公开链接 / base64=内嵌） */
-const PRESENTATION_VALUES = ["url", "base64"] as const;
+type Selection = {
+  images: "link" | "embed" | null;
+  transcribe: boolean;
+  describe: boolean;
+  prompt: string;
+  system: string;
+};
 
-/** 图片内容部件（依赖呈现：ocr=转写 / alt=描述，可多选） */
-const CONTENT_VALUES = ["ocr", "alt"] as const;
+const DEFAULT_SELECTION: Selection = {
+  images: null,
+  transcribe: false,
+  describe: false,
+  prompt: "",
+  system: "",
+};
 
-type Selection = { presentation: string | null; content: string[] };
-
-/** 记忆上次选择；无记忆或记忆值非法时回到缺省（纯解析，与服务端/CLI 缺省 body 一致）。
- *  依赖关系一并校验：无呈现部件时内容清空（localStorage 手改可能产生 body,ocr 之类的矛盾态，直接提交会被服务端 400） */
-function loadOutput(): Selection {
+/** 记忆上次选择；无记忆或记忆值非法时回到缺省（与服务端/CLI 缺省一致：不传呈现与任务，
+ *  缺省由输入类型决定——文字文件→正文，图片文件→完整转写）。
+ *  依赖关系一并校验：无呈现时描述清空（localStorage 手改可能产生矛盾态，直接提交会被服务端 400） */
+function loadOptions(): Selection {
   try {
-    const raw = localStorage.getItem(OUTPUT_STORAGE_KEY);
-    if (!raw) return { presentation: null, content: [] };
-    const parts = raw.split(",").filter(Boolean);
-    const presentation = PRESENTATION_VALUES.find((p) => parts.includes(p)) ?? null;
-    const content = presentation
-      ? CONTENT_VALUES.filter((c) => parts.includes(c))
-      : [];
-    return { presentation, content };
+    const raw = localStorage.getItem(OPTIONS_STORAGE_KEY);
+    if (!raw) return DEFAULT_SELECTION;
+    const parts = raw.split("+").filter(Boolean);
+    const images = parts.includes("link")
+      ? "link"
+      : parts.includes("embed")
+        ? "embed"
+        : null;
+    let prompt = "";
+    let system = "";
+    try {
+      prompt = localStorage.getItem(PROMPT_STORAGE_KEY) ?? "";
+      system = prompt ? localStorage.getItem(SYSTEM_STORAGE_KEY) ?? "" : "";
+    } catch {
+      /* 忽略：仅丢失提示词记忆 */
+    }
+    return {
+      images,
+      transcribe: parts.includes("transcribe"),
+      describe: images ? parts.includes("describe") : false,
+      prompt,
+      system,
+    };
   } catch {
-    return { presentation: null, content: [] };
+    return DEFAULT_SELECTION;
   }
 }
 
-/** 提交时组装为规范序 CSV（body 锚点 + 呈现 + 内容按固定序），与服务端 parse_output 归一化同序 */
-function buildOutput(sel: Selection): string {
-  const parts = ["body"];
-  if (sel.presentation) parts.push(sel.presentation);
-  parts.push(...CONTENT_VALUES.filter((c) => sel.content.includes(c)));
-  return parts.join(",");
+/** 当前选择 → 提交选项（images / transcribe / describe / prompt / system） */
+function buildOptions(sel: Selection): UploadOptions {
+  return {
+    images: sel.images,
+    transcribe: sel.transcribe,
+    describe: sel.describe,
+    prompt: sel.prompt.trim(),
+    system: sel.system.trim(),
+  };
+}
+
+/** 选择记忆串（与后端 options 列同构） */
+function optionsKey(sel: Selection): string {
+  return [
+    sel.images ?? "drop",
+    ...(sel.transcribe ? ["transcribe"] : []),
+    ...(sel.describe ? ["describe"] : []),
+    ...(sel.prompt.trim() ? ["prompt"] : []),
+  ].join("+");
 }
 
 /** 当前选择下，一张图片在产出 Markdown 中的形态（实时预览）。
- * 示例值只示意结构：链接指向原图或 data URI，alt 位放一句话描述，转写文本块跟在下方；纯解析时图片不进产出。 */
-function outputPreview(sel: Selection): string {
-  if (!sel.presentation) return "（仅正文，图片不处理）";
-  const alt = sel.content.includes("alt") ? "一句话描述" : "图片";
-  const ref = sel.presentation === "url" ? "图片链接" : "data:image/png;base64,…";
+ *  示例值只示意结构：链接指向原图或 data URI，描述位放一句话描述，转写文本块跟在下方或独立成段。 */
+function optionsPreview(sel: Selection): string {
+  const promptLine = sel.prompt.trim() ? "按你的提示词生成的文本" : "";
+  if (!sel.images) {
+    if (sel.transcribe)
+      return "图片的完整转写文本" +
+        (promptLine ? `\n${promptLine}` : "\n（不留图，图片原位变文字）");
+    if (promptLine) return `${promptLine}\n（不留图，按你的提示词生成文字）`;
+    return "（不选时：文档只提取正文，图片自动完整转写）";
+  }
+  const alt = sel.describe ? "一句话描述" : "图片";
+  const ref = sel.images === "link" ? "图片链接" : "data:image/png;base64,…";
   let block = `![${alt}](${ref})`;
-  if (sel.content.includes("ocr")) block += "\n图片的完整转写文本";
+  if (sel.transcribe) block += "\n图片的完整转写文本";
+  if (promptLine) block += `\n${promptLine}`;
   return block;
 }
 
@@ -70,39 +120,41 @@ function StepArt({ kind }: { kind: 0 | 1 | 2 }) {
   return <IcMarkdown size={26} />;
 }
 
-/** 首访主舞台：上传热区 + 产出组成选择 + 价值主张 + 三步流程 + 格式矩阵 */
+/** 首访主舞台：上传热区 + 转换选项 + 价值主张 + 三步流程 + 格式矩阵 */
 export default function UploadZone({ formats, submitting, onAccepted }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sel, setSel] = useState<Selection>(loadOutput);
-  const pureParse = !sel.presentation && sel.content.length === 0;
+  const [studioOpen, setStudioOpen] = useState(false);
+  const [sel, setSel] = useState<Selection>(loadOptions);
+  const isDefault =
+    !sel.images && !sel.transcribe && !sel.describe && !sel.prompt.trim();
 
-  // 选择记忆（全不选即纯解析，同样落盘——下次上传沿用）
+  // 选择记忆（缺省同样落盘——下次上传沿用；提示词全文单独存）
   useEffect(() => {
     try {
-      localStorage.setItem(OUTPUT_STORAGE_KEY, buildOutput(sel));
+      localStorage.setItem(OPTIONS_STORAGE_KEY, optionsKey(sel));
+      localStorage.setItem(PROMPT_STORAGE_KEY, sel.prompt);
+      localStorage.setItem(SYSTEM_STORAGE_KEY, sel.system);
     } catch {
       /* 存储不可用：忽略，仅丢失偏好 */
     }
   }, [sel]);
 
-  /** 呈现互斥单选：再点当前项即取消（回到未选）；关呈现连带清内容（依赖） */
-  function togglePresentation(part: string) {
-    setSel((cur) =>
-      cur.presentation === part
-        ? { presentation: null, content: [] }
-        : { presentation: part, content: cur.content },
-    );
+  /** 呈现三选单选（drop / link / embed） */
+  function setPresentation(images: Selection["images"]) {
+    setSel((cur) => ({
+      ...cur,
+      images,
+      describe: images ? cur.describe : false,
+    }));
   }
 
-  /** 内容多选：仅在已选呈现时可用（依赖关系） */
-  function toggleContent(part: string) {
+  /** 任务开关：转写独立可用；描述是图片的文字说明，需先选呈现 */
+  function toggleTask(task: "transcribe" | "describe") {
     setSel((cur) => ({
-      presentation: cur.presentation,
-      content: cur.content.includes(part)
-        ? cur.content.filter((c) => c !== part)
-        : [...cur.content, part],
+      ...cur,
+      [task]: !cur[task],
     }));
   }
 
@@ -110,7 +162,7 @@ export default function UploadZone({ formats, submitting, onAccepted }: Props) {
   function checkFile(file: File): string | null {
     if (file.size > MAX_UPLOAD_MB * 1024 * 1024)
       return `${file.name}：超出大小上限（≤ ${MAX_UPLOAD_MB}MB）`;
-    // 扩展名与后端同口径：取最后一个点之后；无点、隐藏文件、点在末尾均按「无扩展名」报（后端仍兜底校验，预检只是省一次无谓上传）
+    // 扩展名与后端同口径：取最后一个点之后；无点、隐藏文件、点在末尾均按「无扩展名」报（后端另有校验，预检省一次无谓上传）
     const dot = file.name.lastIndexOf(".");
     const ext =
       dot > 0 && dot < file.name.length - 1
@@ -141,7 +193,7 @@ export default function UploadZone({ formats, submitting, onAccepted }: Props) {
       else accepted.push(file);
     }
     if (rejected.length > 0) setError(`已跳过：\n${rejected.join("\n")}`);
-    if (accepted.length > 0) onAccepted(accepted, buildOutput(sel));
+    if (accepted.length > 0) onAccepted(accepted, buildOptions(sel));
   }
 
   const groups = groupFormats(formats);
@@ -152,7 +204,7 @@ export default function UploadZone({ formats, submitting, onAccepted }: Props) {
       <div className={s.pitch}>
         <h1 className={s.pitchTitle}>任意文件 → Markdown</h1>
         <p className={s.pitchSub}>
-          图片不丢、内容可检索——正文、图片链接、图片转写文本，按需组合产出。
+          图片不丢、内容可检索——图片怎么保留、要不要转成文字，由你选择。
         </p>
       </div>
 
@@ -200,12 +252,12 @@ export default function UploadZone({ formats, submitting, onAccepted }: Props) {
 
       {/* 主舞台分区：左列认识产品（三步流程 + 格式矩阵），右列动手配置 */}
       <div className={s.stage}>
-        {/* 三步流程线：上传 → 自动转换 → 按需组合产出 */}
+        {/* 三步流程线：上传 → 自动转换 → 组合产出 */}
         <ol className={s.steps}>
           {[
             { art: 0, title: "上传文件", desc: "文档、表格、演示或图片" },
             { art: 1, title: "自动转换", desc: "提取正文，图片按需保存与转写" },
-            { art: 2, title: "组合产出", desc: "正文 + 链接/内嵌 + 转写写入 Markdown" },
+            { art: 2, title: "组合产出", desc: "图片按你选的方式写进同一份 Markdown" },
           ].map((step, i) => (
             <li key={step.title} className={s.step}>
               {i > 0 && (
@@ -224,37 +276,52 @@ export default function UploadZone({ formats, submitting, onAccepted }: Props) {
           ))}
         </ol>
 
-        {/* 产出组成：上传时选定的唯一运行参数（全不选即纯解析） */}
+        {/* 转换选项：上传时选定的运行参数（呈现三选 + 任务开关） */}
         <aside className={s.options}>
           <div className={s.optionsHeader}>
-            <h2 className={s.optionsTitle}>产出组成</h2>
-            {pureParse && (
-              <span
-                className={s.pureParseHint}
-                title="只提取正文，不处理图片，不调用模型"
+            <h2 className={s.optionsTitle}>图片怎么处理</h2>
+            <span className={s.headerRight}>
+              {isDefault && (
+                <span
+                  className={s.pureParseHint}
+                  title="不选任何选项：文档只提取正文，图片自动完整转写"
+                >
+                  💡 默认
+                </span>
+              )}
+              <button
+                type="button"
+                className={`${s.customIcon} ${sel.prompt.trim() ? s.customIconOn : ""}`}
+                aria-haspopup="dialog"
+                onClick={() => setStudioOpen(true)}
+                title={
+                  sel.prompt.trim()
+                    ? `自定义分析已设置：${sel.prompt.trim()}（点击修改或清除）`
+                    : "自定义图片分析——写提示词、选图生成看效果"
+                }
               >
-                💡 纯解析
-              </span>
-            )}
+                ✎{sel.prompt.trim() ? " ●" : ""}
+              </button>
+            </span>
           </div>
           <div className={s.partRows}>
             <div className={s.partRow}>
               <button
                 type="button"
-                className={`${s.partBtn} ${sel.presentation === "url" ? s.partBtnOn : ""}`}
-                aria-pressed={sel.presentation === "url"}
-                onClick={() => togglePresentation("url")}
-                title="给图片一个可点开的网址，随时查看原图（与内嵌二选一）"
+                className={`${s.partBtn} ${sel.images === "link" ? s.partBtnOn : ""}`}
+                aria-pressed={sel.images === "link"}
+                onClick={() => setPresentation(sel.images === "link" ? null : "link")}
+                title="给图片一个可点开的网址，随时查看原图；需要配置图片存储。再点一次取消（不保留图片）"
               >
                 <span className={s.partDot} aria-hidden="true" />
                 链接
               </button>
               <button
                 type="button"
-                className={`${s.partBtn} ${sel.presentation === "base64" ? s.partBtnOn : ""}`}
-                aria-pressed={sel.presentation === "base64"}
-                onClick={() => togglePresentation("base64")}
-                title="把图片直接放进 Markdown，离线也能看（与链接二选一）"
+                className={`${s.partBtn} ${sel.images === "embed" ? s.partBtnOn : ""}`}
+                aria-pressed={sel.images === "embed"}
+                onClick={() => setPresentation(sel.images === "embed" ? null : "embed")}
+                title="把图片直接放进 Markdown，离线也能看。再点一次取消（不保留图片）"
               >
                 <span className={s.partDot} aria-hidden="true" />
                 内嵌
@@ -263,47 +330,45 @@ export default function UploadZone({ formats, submitting, onAccepted }: Props) {
             <div className={s.partRow}>
               <button
                 type="button"
-                className={`${s.partBtn} ${sel.content.includes("ocr") ? s.partBtnOn : ""} ${!sel.presentation ? s.partBtnLocked : ""}`}
-                aria-pressed={sel.content.includes("ocr")}
-                aria-disabled={!sel.presentation}
-                onClick={() => {
-                  if (sel.presentation) toggleContent("ocr");
-                }}
-                title={
-                  sel.presentation
-                    ? "用视觉模型把图片内容转成完整文字（产生模型费用）"
-                    : "请先选择链接或内嵌"
-                }
+                className={`${s.partBtn} ${sel.transcribe ? s.partBtnOn : ""}`}
+                aria-pressed={sel.transcribe}
+                onClick={() => toggleTask("transcribe")}
+                title="用视觉模型把图片内容转成完整文字（产生模型费用）"
               >
                 <span className={s.partDot} aria-hidden="true" />
                 转写
               </button>
+
               <button
                 type="button"
-                className={`${s.partBtn} ${sel.content.includes("alt") ? s.partBtnOn : ""} ${!sel.presentation ? s.partBtnLocked : ""}`}
-                aria-pressed={sel.content.includes("alt")}
-                aria-disabled={!sel.presentation}
+                className={`${s.partBtn} ${sel.describe ? s.partBtnOn : ""} ${!sel.images ? s.partBtnLocked : ""}`}
+                aria-pressed={sel.describe}
+                aria-disabled={!sel.images}
                 onClick={() => {
-                  if (sel.presentation) toggleContent("alt");
+                  if (sel.images) toggleTask("describe");
                 }}
                 title={
-                  sel.presentation
-                    ? "一句话说明图片是什么"
-                    : "请先选择链接或内嵌"
+                  sel.images
+                    ? "一句话说明图片是什么，作为图片的文字说明"
+                    : "描述写在图片的文字说明里，要先选链接或内嵌"
                 }
               >
                 <span className={s.partDot} aria-hidden="true" />
                 描述
               </button>
+
+              {/* 任务轴的开放端：内置两动词之外的任意意图，进工作台撰写与生成。
+                  入口两态：未设置 / 已设置（加亮点）；摘要在悬停提示与工作台内，
+                  清除在工作台内 */}
             </div>
           </div>
           <div className={s.preview} aria-live="polite">
-            <span className={s.previewLabel}>图片在产出中的形态</span>
-            <pre className={s.previewBody}>{outputPreview(sel)}</pre>
+            <span className={s.previewLabel}>转换结果里的图片</span>
+            <pre className={s.previewBody}>{optionsPreview(sel)}</pre>
           </div>
           <p className={s.optionsHint}>
-            链接和内嵌二选一；转写、描述要先选链接或内嵌其中一个，会调用视觉模型（产生模型费用）。
-            都不选就只提取正文，不调用模型。
+            链接、内嵌都不选就是不保留图片（默认）；转写可以单独开（不留图也能只要文字），
+            描述要先选链接或内嵌。转写、描述、自定义提示词会调用视觉模型（产生模型费用）。
           </p>
         </aside>
 
@@ -335,6 +400,18 @@ export default function UploadZone({ formats, submitting, onAccepted }: Props) {
         onChange={(e) => {
           if (e.target.files && e.target.files.length > 0) collect(e.target.files);
           e.target.value = ""; // 同文件可重复选择
+        }}
+      />
+
+      {/* 提示词工作台：二级模态，左写右看流式生成；应用后写回 sel.prompt */}
+      <PromptStudio
+        open={studioOpen}
+        initialPrompt={sel.prompt}
+        initialSystem={sel.system}
+        onClose={() => setStudioOpen(false)}
+        onApply={(prompt, system) => {
+          setSel((cur) => ({ ...cur, prompt, system }));
+          setStudioOpen(false);
         }}
       />
     </div>

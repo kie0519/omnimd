@@ -8,7 +8,6 @@ REQUIRED_ENV = {
     "VLM_API_KEY": "key",
     "VLM_BASE_URL": "https://vlm.example/v1",
     "VLM_MODEL": "vision-model",
-    "STORAGE_PROVIDER": "s3",
     "S3_ENDPOINT_URL": "https://s3.example",
     "S3_REGION": "region",
     "S3_BUCKET": "bucket",
@@ -24,7 +23,7 @@ def make_config(**overrides) -> "Config":
         vlm_api_key="key",
         vlm_base_url="https://vlm.example/v1", vlm_model="vision-model",
         vlm_thinking="thinking-off",
-        storage_provider="s3", s3_endpoint_url="https://s3.example",
+        s3_endpoint_url="https://s3.example",
         s3_region="region", s3_bucket="bucket", s3_access_key_id="ak",
         s3_secret_access_key="sk", s3_key_prefix="",
     )

@@ -7,7 +7,7 @@ export default function OfflineBanner({ show }: { show: boolean }) {
       role="status"
       aria-live="polite"
     >
-      {show ? "服务连接中断，正在重试…" : ""}
+      {show ? "连不上服务器，正在重试…" : ""}
     </div>
   );
 }

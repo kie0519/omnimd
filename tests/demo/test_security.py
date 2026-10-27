@@ -8,7 +8,7 @@ def test_upload_filename_traversal_rejected(client):
     resp = client.post(
         "/api/tasks",
         files={"file": ("../../etc/passwd.txt", b"hello", "text/plain")},
-        data={"output": "body"},
+        data={},
     )
     assert resp.status_code in (202, 400)
 

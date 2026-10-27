@@ -18,13 +18,14 @@ def _text_file(tmp_path, name="bench.md", lines=300):
 
 
 def test_pure_parse_benchmark(benchmark, tmp_path):
-    """纯解析（body）：单文件全管线耗时——解析引擎 + 注册 + 渲染"""
+    """文字类裸命令（仅正文）：单文件全管线耗时——解析引擎 + 注册 + 渲染"""
     from omnimd.converter import Converter
-    conv = Converter(make_config(cache_dir=tmp_path))
+    from omnimd.prompts import build_registry
+    conv = Converter(make_config(cache_dir=tmp_path), build_registry())
     src = _text_file(tmp_path)
 
     def run():
-        return conv.convert(src, output="body")
+        return conv.convert(src)
 
     result = benchmark(run)
     assert "基准样例" in result.markdown and result.image_count == 0
@@ -32,16 +33,17 @@ def test_pure_parse_benchmark(benchmark, tmp_path):
     assert benchmark.stats.stats.mean < 5.0
 
 
-def test_cache_hit_benchmark(benchmark, tmp_path):
-    """缓存命中路径：同文件二跑的耗时承诺（纯解析无外部调用，
-    此处度量的是「重跑全管线自身开销」的上界形态）"""
+def test_rerun_overhead_benchmark(benchmark, tmp_path):
+    """同文件二跑开销：纯文本转换（无图片）度量重跑全管线自身的开销上界
+    （任务产物/URL 两层缓存挂在图片产物上，纯文本无缓存可命中）"""
     from omnimd.converter import Converter
-    conv = Converter(make_config(cache_dir=tmp_path))
+    from omnimd.prompts import build_registry
+    conv = Converter(make_config(cache_dir=tmp_path), build_registry())
     src = _text_file(tmp_path, "second.md")
-    conv.convert(src, output="body")   # 首跑（建缓存/引擎加载）
+    conv.convert(src)   # 首跑（引擎加载）
 
     def run():
-        return conv.convert(src, output="body")
+        return conv.convert(src)
 
     benchmark(run)
     assert benchmark.stats.stats.mean < 5.0

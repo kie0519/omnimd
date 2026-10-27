@@ -1,11 +1,11 @@
 ---
 name: omnimd
-description: 文件转 Markdown。当用户要求把 PDF/DOCX/PPTX/XLSX 等任意文件转成 Markdown、提取文件正文与图片、转写图片内容、为 RAG/知识库/Agent 上下文准备语料时使用。
+description: 文件转 Markdown。当用户要求把 PDF/DOCX/PPTX/XLSX 等任意文件转成 Markdown、提取文件正文与图片、转写图片内容、按自定义意图分析图片、为 RAG/知识库/Agent 上下文准备语料时使用。
 ---
 
 # 文件转 Markdown（omnimd）
 
-任意文件转 Markdown：正文为必选锚点，图片链接、base64 内嵌、转写文本、描述文本四部件按需组合——全不选即纯解析（不调用模型、不依赖存储）。图片既可看（公开链接或内嵌），内容也可检索（视觉模型转写的文本块）。
+任意文件转 Markdown：正文逐字保留；图片可保留为链接或内嵌（--images），可转写、描述或按自定义提示词分析（--transcribe / --describe / --prompt）。不带图片参数时：文档只提取正文（无需凭据），图片文件自动完整转写。
 
 omnimd 是 PyPI 包，自带 `omnimd` 命令行入口——本 skill 只含使用指导，不携带工具代码。
 
@@ -14,20 +14,20 @@ omnimd 是 PyPI 包，自带 `omnimd` 命令行入口——本 skill 只含使�
 1. 确认本机 Python ≥ 3.10；
 2. 安装：`pip install omnimd`；
 3. 在**当前工作目录**创建 `.env` 填入凭据（骨架可从本 skill 目录的 `.env.example` 复制：`cp "${CLAUDE_SKILL_DIR}/.env.example" .env`）：
-   - 纯解析（仅 `body`）不需要任何凭据，可跳过本步；
-   - 图片转写（ocr/alt 部件）填 `VLM_API_KEY` / `VLM_BASE_URL` / `VLM_MODEL`（凭据三项，任意 OpenAI 兼容端点直接接入；`VLM_THINKING` 可选——思考控制方式，不设置即 none）；
-   - 图片链接（url 部件）另填存储：`STORAGE_PROVIDER=s3` 加 `S3_*` 系列；
+   - 只转文档、不处理图片时不需要任何凭据，可跳过本步；
+   - 图片任务（转写 / 描述 / `--prompt`）填 `VLM_API_KEY` / `VLM_BASE_URL` / `VLM_MODEL`（凭据三项，任意 OpenAI 兼容端点直接接入；`VLM_THINKING` 可选——思考控制方式，不设置即 none）；
+   - 用 `--images link` 保留图片公开链接时另填存储：`S3_*` 五项（任意 S3 兼容端点直接接入）；
 4. 自检：`omnimd --help` 能打印用法即安装成功（配置是否齐全在首次转换时校验）。
 
 ## 前置确认
 
-执行转换命令前确认两件事：`omnimd` 命令可用；工作目录 `.env` 已按本次产出组成配置（首次使用按「首次使用」一节完成安装与配置）。
+执行转换命令前确认两件事：`omnimd` 命令可用；工作目录 `.env` 已配置（首次使用按「首次使用」一节完成安装与配置）。
 
 凭据缺失在首次需要它的转换时报出，报错列出全部缺失项与补救方式。出现该报错时引导用户补齐后重跑，不要重试：
 
-- 缺 VLM 凭据三项 → 首次产出含 ocr/alt 部件时报错；
-- 缺存储配置 → 首次产出含 url 部件时报错；
-- 纯解析（`--output body`）不需要凭据即可运行。
+- 缺 VLM 凭据三项 → 首次图片任务时报错；
+- 缺存储配置 → 首次用 `--images link` 时报错；
+- 只转文档（不带图片参数）不需要凭据即可运行。
 
 ## 执行
 
@@ -40,16 +40,20 @@ omnimd <输入目录>/ -o <输出目录>/
 
 # 可选控制（参数说明见命令下方）
 omnimd <文件路径> -o <输出目录>/ \
-  --output body,url,ocr \
+  --images link --transcribe \
   --concurrency 4
-# --output：产出组成，逗号分隔多选——body=正文（必选锚点，省略自动包含），
-#   url=图片链接，base64=图片内嵌（与 url 互斥），ocr=转写文本，
-#   alt=描述文本（ocr/alt 依赖 url 或 base64）；
-#   缺省读 .env 的 OUTPUT，未设置为 body（纯解析）
-# --concurrency：图片转写并发数
+# --images：图片处理方式——link=公开链接（需存储配置），embed=base64 内嵌自包含；
+#   不传 = 不保留图片，只要文字
+# --transcribe：完整转写每张图片（等价 --prompt transcribe）
+# --describe：一句话描述填入链接描述位（等价 --prompt describe；需 --images）
+# --prompt：以提示词驱动图片任务——值是任务名（内置或工作目录 prompts/ 下的
+#   文件名）时引用该任务，否则作为提示词文本即时生效；可重复叠加
+# --concurrency：图片任务并发数
 ```
 
-自然语言 → 参数映射：用户说「图片只要链接、别转写」→ `--output body,url`；「图片内嵌进 Markdown，离线也能看」→ `--output body,base64`；「图片和转写都要」→ `--output body,url,ocr`；「链接要有描述文字」→ `--output body,url,alt`；「只要正文、图片别处理」→ `--output body`（或不传该参数，即缺省）；「并发低一点/高一点」→ `--concurrency 4` / `--concurrency 16`。
+自然语言 → 参数映射：用户说「图片给我链接」→ `--images link`；「图片内嵌进 Markdown，离线也能看」→ `--images embed`；「图片和转写都要」→ `--images link --transcribe`；「不留图，只要图片的文字」→ `--transcribe`；「链接要有描述文字」→ `--images link --describe`；「只要正文、图片别处理」→ 不传参数；「并发低一点/高一点」→ `--concurrency 4` / `--concurrency 16`。
+
+**自定义图片任务**：用户要「走查这个界面」「重点看配色」等任意意图时，直接 `--prompt "<提示词>"` 即时生效；会反复使用的意图在工作目录建 `prompts/<任务名>.md`（正文写提示词，`--prompt <任务名>` 引用）。
 
 输出目录始终显式传 `-o`（缺省会落到当前目录的 `docs/` 下）。
 
@@ -62,5 +66,6 @@ omnimd <文件路径> -o <输出目录>/ \
 
 ## 限制
 
-- 切换（VLM 端点 / 存储后端 / 解析引擎）不提供命令行参数，只改工作目录的 `.env`（凭据三项 KEY/URL/MODEL 随端点整体更换）；
+- 切换（VLM 端点 / 存储端点 / 解析引擎）不提供命令行参数，只改工作目录的 `.env`（凭据三项 KEY/URL/MODEL 随端点整体更换）；
+- `.env` 只放连接与环境（凭据、模型、思考方式、超时、并发、解析引擎、缓存目录）；图片怎么处理由命令参数决定；
 - 不修改输入文件，产物只写入 `-o` 指定目录。

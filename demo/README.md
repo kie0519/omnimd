@@ -4,8 +4,8 @@
 
 ## 前置条件
 
-- Python ≥ 3.10，已安装 omnimd（`pip install omnimd`；参与开发则仓库根执行 `pip install -e .`）
-- `.env`（项目根）按产出组成配置：纯解析无需任何凭据；转写/描述需 VLM 凭据，图片链接需存储配置（首次此类转换时校验）
+- Python ≥ 3.10，仓库根执行 `pip install -e .` 安装 omnimd（demo 随仓库演进，配置读仓库根 .env）
+- `.env`（项目根）只承载环境与引擎：转写/描述需 VLM 凭据，链接呈现需存储配置（首次此类转换时校验）；文字文件不选任务时无需任何凭据
 - Node.js ≥ 18（仅开发/构建前端需要）
 
 ## 运行
@@ -38,8 +38,9 @@ cd demo/backend && python -m uvicorn main:app --port 8300
 
 ## 接口行为
 
-- `POST /api/tasks`：202 创建；`output` Form 字段为产出组成（五部件
-  规范序 CSV，缺省 `body` 纯解析），非法取值 / url 与 base64 同选 /ocr·alt 缺呈现部件均 400（附完整可选取值）；不支持扩展名 400（附完整支持列表）；空文件 400；超 50MB 400；并发占满（running+pending ≥ 3）429
+- `POST /api/tasks`：202 创建；表单字段 `images`（link / embed，缺省丢弃图片）、`transcribe` / `describe`（布尔，describe 依赖 images）与 `prompt`（自定义提示词，≤ 10000 字）、`system`（自定义系统提示词，空 = 内置通用骨架，≤ 10000 字）；非法取值 / describe 缺呈现 / 提示词或 system 超长均 400（附指引）；不支持扩展名 400（附完整支持列表）；空文件 400；超 50MB 400；并发占满（running+pending ≥ 3）429
+- `GET /api/prompt/templates`：工作台模板卡片（内置任务母本 + `demo/prompts/` 八场景任务文件，每卡 prompt + system 三件套；附通用骨架原文 general_system）
+- `POST /api/prompt/run`：工作台流式生成——SSE 逐帧输出（`delta` 增量帧 + `done` 收尾帧），只收图片格式、≤ 50MB、提示词 ≤ 10000 字；不进任务队列与历史，完成后落缓存（生成即预热）
 - `GET /api/health`：`{"status": "ok"}`——纯探活，给部署检查与前端
   离线检测反复调用
 - `GET /api/formats`：`{"formats": [...]}`——支持格式（能力数据），

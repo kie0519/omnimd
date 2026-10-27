@@ -1,4 +1,4 @@
-"""S3 兼容对象存储上传后端
+"""S3 兼容对象存储上传实现
 
 一套实现覆盖华为 OBS / 阿里云 OSS / 腾讯云 COS（均兼容 S3 API，其他 S3 兼容端点同理），
 差异只体现在环境变量：endpoint / region / bucket / AK/SK / key 前缀，

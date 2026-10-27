@@ -1,14 +1,17 @@
-"""转换器：将各类文件转换为 Markdown（正文锚点 + 图片部件按需组合）
+"""转换器：将各类文件转换为 Markdown
 
-四步管线（每步职责单一）：
-1. 解析——按扩展名路由到解析引擎（pdf 固定 pymupdf4llm；其余按 DOC_ENGINE 配置，缺省 markitdown，不支持的格式回退另一引擎）
-2. 注册——图片统一注册到资产库：装饰图过滤、SHA-256 去重、占位符替换
-3. 处理——并发上传 + VLM 转写（双层缓存，重跑不产生模型调用；产出不含 ocr/alt 时止步于上传；纯解析时本步整体跳过）
-4. 渲染——占位符按产出组成（url=链接 / base64=内嵌 / ocr=转写文本 / alt=描述文本）回填为图片块；纯解析时图片块移除
+五步管线（编译先行——convert 先编译参数再进管线，每步职责单一）：
+1. 编译——CLI/库参数 → PipelinePlan（呈现值 + 任务集，纯函数）；类型路由缺省：图片文件且无任务动词 → 注入完整转写
+2. 解析——按扩展名路由到解析引擎（pdf 固定 pymupdf4llm；图片直转；其余按 DOC_ENGINE 配置，不支持的格式由另一引擎处理）
+3. 注册——图片统一注册到资产库：装饰图过滤、SHA-256 去重、占位符替换
+4. 处理——并发上传 + 按任务集调用视觉模型（双层缓存，重跑不产生模型调用；无任务时止步于上传；无呈现无任务时本步整体跳过）
+5. 渲染——占位符按呈现值与任务集回填：图片块（link/embed）或任务文本块（drop 时任务产物占图片原位）
 
-VLM 取图方式由产出组成推导。
+参数编译层（compile_plan，纯函数）：CLI / 库参数 → 呈现值 + 任务集。
+语法糖等价由结构保证——--transcribe 与 --prompt transcribe 编译为同一 TaskSpec。
+类型路由缺省：图片文件且未选图片任务 → 自动完整转写（转写就是图片的「解析」；
+默认行为的唯一决定因素是输入类型）。
 同一实例可安全并发调用 convert。
-output 是每次 convert 的参数，缺省取配置的 OUTPUT。
 """
 import base64
 import logging
@@ -16,12 +19,18 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from .config import Config, ConfigError, parse_output
-from .engines import resolve_engine
+from .config import Config, ConfigError
+from .engines import IMAGE_EXTENSIONS, resolve_engine
 from .images import ImageAsset, ImageAssetStore
+from .prompts import (
+    TaskRegistry,
+    TaskSpec,
+    effective_system,
+    failure_note,
+)
 from .storage import create_uploader
 
 logger = logging.getLogger(__name__)
@@ -29,35 +38,105 @@ logger = logging.getLogger(__name__)
 # data URI 图片（pymupdf4llm embed_images / markitdown keep_data_uris 输出）
 _DATA_URI_PATTERN = re.compile(r'!\[([^\]]*)\]\(data:image/([^;]+);base64,([^)]+)\)')
 
-# 图片引用行模板（alt=描述文本，url=公开链接或 data URI）；转写文本块由渲染代码按产出组成追加
+# 图片引用行模板（alt=描述位文本，url=公开链接或 data URI）；任务文本块由渲染代码按任务集追加
 _URL_BLOCK_TEMPLATE = """![{alt}]({url})"""
 
+# 呈现值域：drop=不保留图片（缺省）；link=公开链接；embed=base64 内嵌
+_PRESENTATIONS = ("drop", "link", "embed")
 
+
+# ========== 参数编译层（纯函数） ==========
+@dataclass(frozen=True)
+class PipelinePlan:
+    """管线输入：呈现值 + 任务集——CLI 与库参数的编译产物"""
+
+    presentation: str            # drop | link | embed
+    tasks: tuple[TaskSpec, ...]  # 按声明顺序执行与渲染
+
+
+def _normalize_prompts(prompt) -> tuple[str | TaskSpec, ...]:
+    """prompt 参数归一：None → ()；str / TaskSpec → 单元组；列表混排原样收"""
+    if prompt is None:
+        return ()
+    if isinstance(prompt, (str, TaskSpec)):
+        return (prompt,)
+    return tuple(prompt)
+
+
+def compile_plan(
+    registry: TaskRegistry,
+    *,
+    images: str | None = None,
+    transcribe: bool = False,
+    describe: bool = False,
+    prompts: tuple[str | TaskSpec, ...] = (),
+) -> PipelinePlan:
+    """编译 CLI / 库参数为管线输入（纯函数，可独立单测）。
+
+    - 呈现：images 取 link / embed，不传 = drop；
+    - 任务：--transcribe / --describe 是语法糖（引用注册表同名任务）；
+      prompts 值命中注册表 → 任务引用，否则 → 即时任务（提示词本体即任务）。
+    - describe 的说明文字写在图片链接里，无保留方式（drop）时报错指引。
+    """
+    presentation = images or "drop"
+    if presentation not in _PRESENTATIONS:
+        raise ConfigError(
+            f"不支持的 images 取值：{images!r}"
+            f"（可选：link、embed；不传 = 丢弃图片只要文字）"
+        )
+    tasks: list[TaskSpec] = []
+    if transcribe:
+        tasks.append(registry["transcribe"])
+    if describe:
+        tasks.append(registry["describe"])
+    for item in prompts:
+        if isinstance(item, TaskSpec):
+            tasks.append(item)
+            continue
+        value = item.strip()
+        if not value:
+            raise ConfigError("--prompt 的值不能为空（提示词或任务名）")
+        if value in registry:
+            tasks.append(registry[value])
+        else:
+            # 即时任务：名从内容稳定派生（一处定义于 registry——编译层与集成方共用）
+            from .prompts import adhoc_task_name
+            tasks.append(TaskSpec(name=adhoc_task_name(value), prompt=value))
+    if any(t.render == "attribute" for t in tasks) and presentation == "drop":
+        raise ConfigError(
+            "--describe 的说明文字写在图片链接里，要先保留图片——"
+            "加 --images link 或 --images embed"
+        )
+    return PipelinePlan(presentation=presentation, tasks=tuple(tasks))
+
+
+# ========== 结果结构 ==========
 @dataclass(frozen=True)
 class ImageInfo:
     """产出中一张图片的结构化元数据（程序消费方免解析 Markdown）
 
-    字段值反映管线结果而非产出组成。
+    texts 按任务名给出各任务产物；字段值反映管线结果而非参数面。
     """
 
-    sha256: str          # 内容哈希（同图去重的标识）
-    url: str = ""        # 对象存储公开链接（未上传或上传失败时为空）
-    alt_text: str = ""   # 链接描述文本（产出组成含 alt 时填充；生成失败为空，渲染回退「图片」）
-    ocr_text: str = ""   # 完整转写（产出组成含 ocr 时填充；转写失败为「（图片转写失败）」标记串）
+    sha256: str                          # 内容哈希（同图去重的标识）
+    url: str = ""                        # 对象存储公开链接（未上传或上传失败时为空）
+    texts: dict = field(default_factory=dict)  # {任务名: 产物}；describe 产物即描述位文本
 
 
 @dataclass(frozen=True)
 class ConversionResult:
     """单文件转换结果（convert 的返回值）
 
-    markdown 是产出全文；images 是每张图片的结构化元数据；其余字段是转换统计——调用方不必自行解析产出。
+    markdown 是产出全文；images 是每张图片的结构化元数据；usage 是本次转换
+    的视觉模型 token 用量（无调用时为 None）；其余字段是转换统计。
     """
 
     markdown: str             # 完整 Markdown 文本
     images: list[ImageInfo]   # 图片清单（元数据，与产出中的图片块一一对应）
-    image_count: int          # 产出中的图片块数（链接或内嵌形态均计数；纯解析为 0）
+    image_count: int          # 产出中的图片块数（链接或内嵌形态均计数；drop 为 0）
     char_count: int           # 产出字符数
     elapsed_ms: int           # 转换耗时（毫秒）
+    usage: object = None      # vlm.Usage | None（成本可见性）
 
 
 # ========== 第二步：图片注册（过滤 + 去重），模块级纯函数 ==========
@@ -76,16 +155,20 @@ def register_images(markdown: str, store: ImageAssetStore) -> str:
 
 # ========== 第四步：渲染图片块，模块级纯函数 ==========
 def render_blocks(
-    markdown: str, store: ImageAssetStore, parts: set[str]
+    markdown: str, store: ImageAssetStore, plan: PipelinePlan,
 ) -> tuple[str, list[ImageAsset]]:
-    """把 sha256 占位符按产出组成渲染为图片块，返回 (markdown, 渲染块清单)。
+    """把 sha256 占位符按呈现值与任务集渲染，返回 (markdown, 渲染块清单)。
 
-    parts 是 {body, url, base64, ocr, alt} 的组合（body 锚点；url 与 base64 互斥、ocr/alt 依赖其一）。
-    alt 为空时回退「图片」。
-    纯解析（仅 body）时图片块移除；url 部件要求链接——该图上传失败（无 URL）时丢弃；base64 部件用本地字节渲染 data URI。
+    - drop：图片块移除；block 型任务产物独立成段占图片原位（纯解析无任务时产出无图片痕迹）；
+    - link / embed：图片块 ![描述](ref)；attribute 型任务产物（describe）填描述位，
+      空值回落「图片」；block 型任务产物依次跟在图片块后；
+    - link 且上传失败（无 URL）：该图整块丢弃。
+    任务产物渲染无任何标签——它是正文流的一段，多任务并存靠内容自身区分。
     未知占位符替换为空串；装饰图丢弃后的连续空行统一压缩为单个空行。
     返回的清单与产出中的图片块一一对应（ConversionResult.images 的来源）。
     """
+    block_tasks = tuple(t for t in plan.tasks if t.render == "block")
+    attr_tasks = tuple(t for t in plan.tasks if t.render == "attribute")
     rendered: list[ImageAsset] = []
 
     def render(match: re.Match) -> str:
@@ -93,19 +176,23 @@ def render_blocks(
         asset = store.lookup(sha)
         if asset is None:
             return ""
-        has_url = "url" in parts
-        has_base64 = "base64" in parts
-        # 无呈现部件（纯解析）或 url 部件但上传失败：图片块移除
-        if (not has_url and not has_base64) or (has_url and not asset.url):
+        if plan.presentation == "drop":
+            # 图片不保留；任务产物占图片原位（无任务 = 纯解析，图片痕迹移除）
+            return "\n".join(
+                asset.texts.get(t.name, "") for t in block_tasks
+            )
+        if plan.presentation == "link" and not asset.url:
             return ""
         rendered.append(asset)
-        ocr_text = asset.ocr_text or "（图片转写失败）"
-        ref = asset.url if has_url else asset.data_uri()
-        block = _URL_BLOCK_TEMPLATE.format(
-            alt=asset.alt_text or "图片", url=ref
+        attr_value = "".join(
+            asset.texts.get(t.name, "") for t in attr_tasks
         )
-        if "ocr" in parts:
-            block += f"\n{ocr_text}\n"
+        ref = asset.url if plan.presentation == "link" else asset.data_uri()
+        block = _URL_BLOCK_TEMPLATE.format(
+            alt=attr_value or "图片", url=ref
+        )
+        for t in block_tasks:
+            block += f"\n{asset.texts.get(t.name, '')}\n"
         return block
 
     markdown = re.sub(r"@@IMG:([0-9a-f]{64})@@", render, markdown)
@@ -118,14 +205,19 @@ def _collapse_blank_lines(markdown: str) -> str:
     result: list[str] = []
     blank_run = 0
     in_fence = False
-    fence_marker = ""
+    fence_char = ""
+    fence_len = 0
     for line in markdown.split("\n"):
         stripped = line.strip()
+        # 开围栏可带 info string（```python）；闭围栏必须是纯标记行且长度
+        # 不小于开标记（CommonMark 规则——外层 ```` 包裹内层 ``` 示例时不误闭合）
         if not in_fence and (stripped.startswith("```") or stripped.startswith("~~~")):
             in_fence = True
-            fence_marker = stripped[:3]
+            fence_char = stripped[0]
+            fence_len = len(re.match(r"^(`{3,}|~{3,})", stripped).group(1))
             blank_run = 0
-        elif in_fence and stripped.startswith(fence_marker):
+        elif (in_fence and len(stripped) >= fence_len
+              and re.fullmatch(rf"{fence_char}{{3,}}", stripped)):
             in_fence = False
             blank_run = 0
         if in_fence or stripped:
@@ -139,74 +231,109 @@ def _collapse_blank_lines(markdown: str) -> str:
 
 
 class Converter:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, registry: TaskRegistry):
         self.config = config
+        self.registry = registry
         # 存储客户端按需构造
         self._uploader = None
         self._vlm = None       # 视觉模型客户端（惰性构造，见 vision 属性）
         self._engines = threading.local()  # 线程内复用的引擎实例（见 _get_engine）
+        # token 用量累计（跨 convert 累计，read 属性供上层汇总）
+        self._usage_lock = threading.Lock()
+        self._usage_totals = {"prompt": 0, "completion": 0, "total": 0}
 
     @property
     def uploader(self):
-        """存储客户端——首次需要上传时才构造；缺存储配置给出指引性报错"""
+        """存储客户端——首次需要上传时才构造；未配置存储给出指引性报错"""
         if self._uploader is None:
-            if not self.config.storage_provider:
+            if not self.config.s3_endpoint_url:
                 raise ConfigError(
-                    "本次转换需要文件存储（产出含 url 部件），但 "
-                    "STORAGE_PROVIDER 未配置。请在 .env 中配置存储（S3_*），"
-                    "或改用 base64 部件（output=body,base64,ocr）——图片内嵌"
-                    "产出、VLM 以 base64 直传，不依赖存储。"
+                    "本次转换需要对象存储（--images link），但存储未配置"
+                    "（S3_ENDPOINT_URL 为空）。请在 .env 中配齐 S3_* 五项"
+                    "（S3 兼容端点），或改用 --images embed（图片内嵌产出、"
+                    "VLM 直传 base64，不依赖存储）。"
                 )
             self._uploader = create_uploader(self.config)
         return self._uploader
 
     @property
     def vision(self):
-        """视觉模型客户端——首次转写时才构造并校验凭据（产出不含 ocr/alt 的转换不校验凭据、不加载 openai SDK）"""
+        """视觉模型客户端——首次调用图片任务时才构造并校验凭据（无图片任务的转换不校验凭据、不加载 openai SDK）"""
         if self._vlm is None:
             self.config.validate_vlm()
             from .vlm import create_vlm
             self._vlm = create_vlm(self.config)
         return self._vlm
 
+    def _usage_snapshot(self) -> dict[str, int]:
+        """当前累计用量的快照（convert 前后各取一次，差值即本次用量）"""
+        with self._usage_lock:
+            return dict(self._usage_totals)
+
     # ========== 对外入口 ==========
-    def convert(self, file_path: Path, output: str | None = None) -> ConversionResult:
+    def convert(
+        self,
+        file_path: Path,
+        *,
+        images: str | None = None,
+        transcribe: bool = False,
+        describe: bool = False,
+        prompt=None,
+    ) -> ConversionResult:
         """转换单个文件。
 
-        output 是本次转换的产出组成（逗号分隔多选 body/url/base64/ocr/alt；body 必选锚点，url 与 base64 互斥，ocr/alt 依赖其一），未设置时取配置的 OUTPUT（缺省 body 纯解析）。
+        images 决定图片怎么保留（link / embed；不传 = 丢弃图片）；
+        transcribe / describe 是内置图片任务（--prompt transcribe / describe 的快捷写法）；
+        prompt 接受任务名、即时提示词文本、TaskSpec 或它们的列表。
+        不带图片参数时：图片文件自动完整转写，文档只提取正文（绝不注入额外任务）。
         """
         started = time.perf_counter()
-        parts = set(parse_output(output or self.config.output).split(","))
+        usage_before = self._usage_snapshot()
+        plan = compile_plan(
+            self.registry, images=images, transcribe=transcribe,
+            describe=describe, prompts=_normalize_prompts(prompt),
+        )
+        # 类型路由缺省：图片文件没有「不处理」的退路（像素里没有可提取文字），
+        # 转写就是图片的解析——自动注入完整转写；文档文件绝不注入
+        if not plan.tasks and file_path.suffix.lower() in IMAGE_EXTENSIONS:
+            plan = replace(plan, tasks=(self.registry["transcribe"],))
 
-        # 上传只发生在产出含 url 部件时；纯解析与 base64 内嵌不接触存储
-        need_upload = "url" in parts
-        need_vlm = "ocr" in parts or "alt" in parts
+        # 上传只发生在呈现为 link 时；drop 与 embed 不接触存储
+        need_upload = plan.presentation == "link"
         uploader = self.uploader if need_upload else None
         # 资产库随本次转换创建：同文件去重走内存，跨文件去重走双层磁盘缓存
-        store = ImageAssetStore(self.config, self.config.cache_dir, uploader)
+        store = ImageAssetStore(
+            self.config, self.config.cache_dir, uploader, tasks=plan.tasks,
+        )
         engine = self._get_engine(file_path.suffix.lower())
 
         markdown = engine.convert(file_path, store)
         markdown = register_images(markdown, store)
-        if need_upload or need_vlm:
-            self._process_assets(store, parts)
-        markdown, rendered = render_blocks(markdown, store, parts)
+        if need_upload or plan.tasks:
+            self._process_assets(store, plan)
+        markdown, rendered = render_blocks(markdown, store, plan)
 
-        images = [
-            ImageInfo(
-                sha256=a.sha256,
-                url=a.url,
-                alt_text=a.alt_text,
-                ocr_text=a.ocr_text,
-            )
+        images_meta = [
+            ImageInfo(sha256=a.sha256, url=a.url, texts=dict(a.texts))
             for a in rendered
         ]
+        after = self._usage_snapshot()
+        delta = {k: after[k] - usage_before[k] for k in after}
+        usage = None
+        if delta["total"] > 0:
+            from .vlm.base import Usage
+            usage = Usage(
+                prompt_tokens=delta["prompt"],
+                completion_tokens=delta["completion"],
+                total_tokens=delta["total"],
+            )
         return ConversionResult(
             markdown=markdown,
-            images=images,
+            images=images_meta,
             image_count=len(rendered),
             char_count=len(markdown),
             elapsed_ms=int((time.perf_counter() - started) * 1000),
+            usage=usage,
         )
 
     def _get_engine(self, suffix: str):
@@ -223,54 +350,53 @@ class Converter:
             engine = cache[engine_cls] = engine_cls()
         return engine
 
-    # ========== 第三步：上传 + 转写（并发） ==========
-    def _process_assets(self, store: ImageAssetStore, parts: set[str]) -> None:
+    # ========== 第三步：上传 + 按任务集调用视觉模型（并发） ==========
+    def _process_assets(self, store: ImageAssetStore, plan: PipelinePlan) -> None:
         assets = store.all_assets()
-        logger.info("待处理图片 %d 张（已去重，产出组成=%s）",
-                    len(assets), ",".join(sorted(parts)))
+        logger.info(
+            "待处理图片 %d 张（已去重，呈现=%s，任务=%s）",
+            len(assets), plan.presentation,
+            ",".join(t.name for t in plan.tasks) or "无",
+        )
         if not assets:
             return
-        # 两段式（全部上传 → 全部转写）：上传只发生在产出含 url 部件时；纯 base64 产出无上传阶段
-        if "url" in parts:
+        # 两段式（全部上传 → 全部任务）：上传只发生在呈现为 link 时；drop 与 embed 无上传阶段
+        if plan.presentation == "link":
             self._upload_all(store, assets)
-        need_ocr = "ocr" in parts
-        need_alt = "alt" in parts
-        if not need_ocr and not need_alt:
+        if not plan.tasks:
             return
 
-        # VLM 取图方式由产出组成推导：含 url 部件传公开链接（上传阶段已完成），否则传 base64 data URI（字节本地持有）
-        via_url = "url" in parts
+        # VLM 取图方式由呈现值推导：link 传公开链接（上传阶段已完成），drop/embed 传 base64 data URI（字节本地持有）
+        via_url = plan.presentation == "link"
 
         def image_ref(asset: ImageAsset) -> str:
             return asset.url if via_url else asset.data_uri()
 
         vision = self.vision   # 在调用线程先构造，线程池内只读
+        config = self.config
 
         def work(asset: ImageAsset) -> None:
-            # URL 传图时上传失败的图没有可用 ref，跳过转写（该图走失败渲染）
+            # URL 传图时上传失败的图没有可用 ref，跳过任务（该图走失败渲染）
             if via_url and not asset.url:
                 return
-            if need_ocr:
-                cached = store.get_cached_text(asset.sha256, "ocr")
+            for spec in plan.tasks:
+                cached = store.get_cached_text(spec, asset.sha256)
                 if cached is not None:
-                    asset.ocr_text = cached
-                else:
-                    raw = vision.ocr(image_ref(asset))
-                    # 空结果不落缓存：成功转写必非空（无文字的图片也输出一行描述），空串即失败产物——缓存固化失败，重跑无法重试
-                    if raw:
-                        asset.ocr_text = raw
-                        store.save_cached_text(asset.sha256, "ocr", raw)
-                    else:
-                        # 空内容视同失败：标记串统一字段取值（程序消费方凭「（图片转写失败）」判失败，不以空串混淆「未产出」）
-                        asset.ocr_text = "（图片转写失败）"
-            if need_alt:
-                cached = store.get_cached_text(asset.sha256, "alt")
-                if cached is not None:
-                    asset.alt_text = cached
-                else:
-                    asset.alt_text = vision.describe(image_ref(asset))
-                    if asset.alt_text:
-                        store.save_cached_text(asset.sha256, "alt", asset.alt_text)
+                    asset.texts[spec.name] = cached
+                    continue
+                request = self._build_request(spec, config)
+                result = vision.run(request, image_ref(asset))
+                if result.usage is not None:
+                    self._add_usage(result.usage)
+                text = result.text
+                # 空结果不落缓存：成功产物必非空（无文字的图片也输出一行描述），
+                # 空串即失败产物——缓存固化失败，重跑无法重试
+                if not text:
+                    text = "" if spec.render == "attribute" else failure_note(spec)
+                    asset.texts[spec.name] = text
+                    continue
+                asset.texts[spec.name] = text
+                store.save_cached_text(spec, asset.sha256, text)
 
         with ThreadPoolExecutor(max_workers=self.config.vlm_concurrency) as pool:
             futures = {pool.submit(work, a): a for a in assets}
@@ -280,15 +406,36 @@ class Converter:
                 done += 1
                 try:
                     future.result()
-                    logger.info("[%d/%d] 图片处理完成: %s", done, len(assets), asset.sha256[:12])
+                    logger.info("[%d/%d] 图片处理完成: %s",
+                                done, len(assets), asset.sha256[:12])
                 except Exception:
                     logger.exception("图片处理失败: sha=%s", asset.sha256[:12])
-                    # 空内容与异常均为终态，不重试
-                    # 只清理失败子任务：另一子任务已成功（含缓存命中）的结果不覆盖
-                    if need_ocr and not asset.ocr_text:
-                        asset.ocr_text = "（图片转写失败）"
-                    if need_alt:
-                        asset.alt_text = ""   # 渲染回退「图片」
+                    # 异常为终态，不重试；只补齐未完成的任务产物
+                    # （已成功任务（含缓存命中）的结果不覆盖）
+                    for spec in plan.tasks:
+                        if spec.name not in asset.texts:
+                            asset.texts[spec.name] = (
+                                "" if spec.render == "attribute"
+                                else failure_note(spec)
+                            )
+
+    @staticmethod
+    def _build_request(spec: TaskSpec, config: Config):
+        """任务 → 视觉请求：max_tokens 与 system 在此解析缺省（协议层只见生效值）"""
+        from .vlm.base import VisionRequest
+        return VisionRequest(
+            system=effective_system(spec),
+            user=spec.prompt,
+            max_tokens=spec.max_tokens if spec.max_tokens is not None
+            else config.vlm_max_tokens,
+        )
+
+    def _add_usage(self, usage) -> None:
+        """线程安全累计 token 用量"""
+        with self._usage_lock:
+            self._usage_totals["prompt"] += usage.prompt_tokens
+            self._usage_totals["completion"] += usage.completion_tokens
+            self._usage_totals["total"] += usage.total_tokens
 
     def _upload_all(self, store: ImageAssetStore, assets: list[ImageAsset]) -> None:
         """并发上传全部资产；单张失败不中断（该图渲染为失败占位）。"""

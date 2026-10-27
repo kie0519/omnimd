@@ -2,7 +2,7 @@
 
 > **定位**：omnimd 的产品规格——做什么、不做什么、产出长什么样、怎么算验收合格。实现原理见 [architecture.md](architecture.md)。
 > **读者**：人类专家、AI Agent
-> **最后更新**：2026-10-15
+> **最后更新**：2026-10-27
 
 ---
 
@@ -10,7 +10,7 @@
 
 ### 1.1 是什么
 
-omnimd 是一个通用的文件转 Markdown 工具（CLI 与 Python 库两种使用面）：把文档与图片转换为 Markdown——正文必选，图片链接、base64 内嵌、转写文本、描述文本四部件按需组合，产出的文本直接可被 LLM / coding agent / 知识库消费。文件解析是 LLM 工作流的入口环节，本工具承担这一环节。
+omnimd 是一个通用的文件转 Markdown 工具（CLI 与 Python 库两种使用面）：把文档与图片转换为 Markdown——正文为锚点，图片呈现（丢弃/链接/内嵌）与图片任务（转写/描述/自定义提示词）两轴按需组合，产出的文本直接可被 LLM / coding agent / 知识库消费。文件解析是 LLM 工作流的入口环节，本工具承担这一环节。
 
 产品愿景是「任意文件 → 信息完整的 Markdown」：文档与图片已支持，音频、视频转写在规划中（[ROADMAP](../ROADMAP.md)）。
 
@@ -33,12 +33,13 @@ omnimd 是一个通用的文件转 Markdown 工具（CLI 与 Python 库两种使
 |---|---|
 | 开发者（与 coding agent 协作） | 把需求文档/产品手册/方案 PDF 转成 Markdown，作为 agent 的上下文喂入 |
 | 知识库构建者 | 批量转换文档进 RAG 管线；文档更新后重跑 |
-| 扩展/运维（开发者或 Agent） | 新增解析引擎、切换 VLM 端点或存储后端；排查转换异常 |
+| 扩展/运维（开发者或 Agent） | 新增解析引擎、切换 VLM 或存储端点；排查转换异常 |
 
 **CLI 入口**：
 
 ```bash
-omnimd <文件或目录...> [-o 输出目录] [--output body,url,ocr] [--concurrency N] [--cache-dir 目录] [-v]
+omnimd <文件或目录...> [-o 输出目录] [--images link|embed] [--transcribe] [--describe]
+                        [--prompt <提示词或任务名> ...] [--concurrency N] [--cache-dir 目录] [-v]
 ```
 
 **Python 库入口**（安装后在自己的代码里调用）：
@@ -47,10 +48,10 @@ omnimd <文件或目录...> [-o 输出目录] [--output body,url,ocr] [--concurr
 from omnimd import OmniMD
 
 md = OmniMD()                            # 读环境变量 / .env 构造
-result = md.convert("报告.pdf", output="url")   # → ConversionResult（.markdown 为产出全文）
+result = md.convert("报告.pdf", images="link")   # → ConversionResult（.markdown 为产出全文）
 ```
 
-配置与转换分离：连接配置在构造时配齐（环境变量或显式参数对象），`convert()` 只传文件与本次产出组成。两种入口共用同一套配置加载与转换管线。
+配置与转换分离：连接配置在构造时配齐（环境变量或显式参数对象），`convert()` 只传文件与本次的呈现与任务（参数与 CLI 同名同义）。两种入口共用同一套配置加载与转换管线。
 
 ## 三、功能清单
 
@@ -61,7 +62,7 @@ result = md.convert("报告.pdf", output="url")   # → ConversionResult（.mark
 | 单文件转换 | 任意受支持格式（文档或图片） |
 | 目录批处理 | 目录下所有文件按名排序转换；不支持的格式**一次报全** |
 | 文档格式 | `.pdf .docx .docm .doc .odt .ods .odp .ppt .pptx .pptm .ppsx .ppsm .rtf .epub .xlsx .xlsm .xlsb .xls .csv .html .htm .json .xml .zip .txt .md .rst .ipynb` |
-| 图片输入 | `.png .jpg .jpeg .gif .bmp .webp .tif .tiff .svg .ico`——单张图片直接作为输入，产出形态与文档内嵌图片一致（按产出组成渲染） |
+| 图片输入 | `.png .jpg .jpeg .gif .bmp .webp .tif .tiff .svg .ico`——单张图片直接作为输入，产出形态与文档内嵌图片一致（按呈现与任务渲染） |
 
 ### 3.2 解析引擎（非 PDF 格式）
 
@@ -75,19 +76,23 @@ result = md.convert("报告.pdf", output="url")   # → ConversionResult（.mark
 
 | 功能 | 说明 |
 |---|---|
-| 产出组成 | 每次转换可选（`body` / `url` / `base64` / `ocr` / `alt` 逗号分隔多选）：`body` 正文（必选锚点，省略自动包含）；`url` 图片公开链接；`base64` 图片内嵌（与 url 互斥）；`ocr` 转写文本；`alt` 描述文本（`ocr`/`alt` 依赖 url 或 base64，需调用视觉模型（产生模型费用））；未设置时取 `body`（纯解析，不调用模型、不依赖存储） |
+| 图片呈现 | `--images link`（公开链接，需存储）/ `embed`（base64 内嵌自包含）；不传 = 丢弃图片只要文字 |
+| 图片任务 | `--transcribe` 完整转写（等价 `--prompt transcribe`）/ `--describe` 一句话描述填链接描述位（等价 `--prompt describe`，需 `--images`）/ `--prompt` 以提示词驱动任意意图（可重复、可引用任务文件）；均产生模型费用 |
+| 缺省路由 | 缺省由输入类型决定：文字类裸命令 = 仅正文（零凭据零成本）；图片文件裸命令 = 完整转写 |
+| 自定义任务 | 工作目录 `prompts/<任务名>.md`（frontmatter 可选 name/system，正文 = 提示词必填）或库侧 `TaskPrompt`；文件定义同名任务可覆盖内置 |
 | 装饰图过滤 | 短边 < 60px 的图标/分隔线直接丢弃，不产生占位符 |
-| 内容去重 | 相同图片（SHA-256 相同）只上传、转写一次，多处引用同一 URL |
-| 图片托管 | 上传至配置的存储后端换取长期公开 URL |
+| 内容去重 | 相同图片（SHA-256 相同）只上传、处理一次，多处引用同一 URL |
+| 图片托管 | 上传至配置的对象存储换取长期公开 URL（link 呈现时） |
 | 图片转写 | 视觉模型把图片转为结构化 Markdown 文本——提取确定性内容（文字/数值/表格/结构）+ 描述视觉现象（布局/印章/场景）。转写质量的工程化验证（校对与裁决管线）在规划中。提示词正文见 [prompts/](../omnimd/prompts) |
 
 ### 3.4 缓存与成本
 
 | 功能 | 说明 |
 |---|---|
-| 转写缓存 | 转写结果持久化；同一 VLM 下重跑不再调用模型 |
+| 任务缓存 | 任务产物持久化；同一 VLM 下重跑不再调用模型 |
 | URL 缓存 | 上传结果持久化；同一存储（端点与桶）下重跑不再上传 |
-| 隔离切换 | 缓存按思考控制方式/模型/提示词隔离——换模型、换思考控制方式或改提示词都强制重新转写（便于评估新配置），换存储（端点/桶）强制重新上传 |
+| 隔离切换 | 缓存按思考控制方式/模型/提示词隔离——换模型、换思考控制方式或改提示词都强制重新转写（便于评估新配置），换存储（端点/桶/前缀）强制重新上传 |
+| 位置规则 | CACHE_DIR 相对值锚定定义它的 .env 所在目录（不经 .env 的环境变量注入则相对当前目录），绝对路径原样；未配置用系统用户缓存目录 |
 
 ### 3.5 端点与引擎切换
 
@@ -95,7 +100,7 @@ result = md.convert("报告.pdf", output="url")   # → ConversionResult（.mark
 |---|---|---|
 | 解析引擎 | markitdown（缺省）/ anydoc | 改 .env 的 DOC_ENGINE |
 | VLM | 任意 OpenAI 兼容端点（凭据三项 KEY/URL/MODEL 直接接入） | 改 .env 的凭据三项；VLM_THINKING 选思考控制方式（缺省 none，取值表见 [.env.example](../.env.example)） |
-| 存储 | s3（S3 兼容通用项：自托管 MinIO / OBS / OSS / COS 等） | 改 .env 的 STORAGE_PROVIDER + 对应凭据 |
+| 存储 | 任意 S3 兼容端点（凭据五项直接接入：自托管 MinIO / OBS / OSS / COS 等） | 改 .env 的 S3_* 凭据五项 |
 
 ## 四、产出规格（下游消费契约）
 
@@ -109,14 +114,14 @@ result = md.convert("报告.pdf", output="url")   # → ConversionResult（.mark
 
 ### 4.2 图片块形态
 
-产出组成决定每张图片的渲染：`body` 为必选锚点（省略时自动包含）；`url` 渲染图片公开链接，`base64` 渲染 base64 内嵌（与 url 互斥）；`ocr` 在链接/内嵌下方附完整转写文本块，`alt` 把一句话描述写进链接的描述位（均依赖 url 或 base64）。全选时：
+呈现与任务共同决定每张图片的渲染。link 呈现 + 转写 + 描述（`--images link --transcribe --describe`）时：
 
 ```markdown
 ![图片的一句话描述](https://<存储域名>/<桶名>/<前缀><sha256>.png)
 {视觉模型输出的完整 Markdown 文本}
 ```
 
-或 base64 内嵌形态：
+或内嵌形态（`--images embed`）：
 
 ```markdown
 ![图片的一句话描述](data:image/png;base64,...)
@@ -124,17 +129,21 @@ result = md.convert("报告.pdf", output="url")   # → ConversionResult（.mark
 ```
 
 - 图片 URL 长期有效、匿名可访问、无过期时间
-- 转写失败的图片：URL/内嵌正常输出，文本位置写「（图片转写失败）」，不中断整批
-- 上传失败的图片：整个图片块从产出中删除，失败记入日志，不中断整批
+- 任务产物渲染无任何标签——它是正文流的一段，多任务并存按声明顺序追加、靠内容自身区分
+- 转写不依赖呈现：drop 时转写文本独立成段占图片原位（纯文本库形态）
+- 转写失败的图片：URL/内嵌正常输出，文本位置写「（图片转写失败）」；自定义任务失败写「（图片任务 <任务名> 失败）」，均不中断整批
+- 描述失败：链接描述位回落「图片」二字
+- 上传失败的图片（link 呈现）：整个图片块从产出中删除，失败记入日志，不中断整批
 - 装饰性图片：整个图片块消失，不留占位
-- 纯解析（仅 `body`）：图片块从产出中移除，不调用模型、不依赖存储
+- 文字类裸命令：图片块从产出中移除，不调用模型、不依赖存储
 
 ## 五、配置体验
 
 - **连接配置只认 .env**：VLM 与存储的全部连接配置只认 .env / 环境变量——CLI 不提供凭据传参；Python 库可显式传连接配置（覆盖环境值）
-- **凭据无默认值**：凭据变量（KEY/URL/MODEL）缺失时报错并列出全部缺失项；存储按需必填——产出组成含 `url` 部件时才要求存储；`base64` 内嵌或纯解析（仅 `body`）运行不需要存储
+- **配置不承载产出语义**：`.env` 只承载环境与引擎（凭据、模型、思考方式、超时、并发、缓存）——呈现与任务由命令参数表达，裸命令在任何环境跑出同一产出（缺省由输入类型决定）
+- **凭据无默认值**：凭据变量（KEY/URL/MODEL）缺失时报错并列出全部缺失项；存储按需必填——`--images link` 呈现时才要求存储；embed 内嵌或文字类裸命令运行不需要存储
 - **端点切换整体一致**：凭据三项（key/url/model）随端点整体更换，CLI 不提供单独覆盖凭据的参数；VLM_THINKING 是思考控制方式（缺省 none 不发参数），不是凭据
-- **取图方式无配置**：转写时图怎么给视觉模型由产出组成推导（含 url 部件传公开 URL，否则传 base64 直送）。本地端点（Ollama 等）不含 url 部件即可用。端点不支持 URL 传图且产出含 url 部件时报错，指引换部件或换端点。
+- **取图方式无配置**：图片任务时图怎么给视觉模型由呈现值推导（link 传公开 URL，其余传 base64 直送）。本地端点（Ollama 等）用 embed 呈现即可。端点不支持 URL 传图且 link 呈现时报错，指引换呈现或换端点。
 
 配置项速查见 [.env.example](../.env.example)，完整说明见根 [README.md](../README.md)。
 
@@ -142,16 +151,19 @@ result = md.convert("报告.pdf", output="url")   # → ConversionResult（.mark
 
 | # | 标准 | 判定方式 |
 |---|---|---|
-| 1 | 每张非装饰图片按产出组成呈现：链接可显示、成功转写的图片其文本可检索（`body,url,ocr` 组合） | 抽查产出 Markdown |
+| 1 | 每张非装饰图片按呈现与任务渲染：链接可显示、成功转写的图片其文本可检索（`--images link --transcribe` 组合） | 抽查产出 Markdown |
 | 2 | 转写失败的图片按 §4.2 形态留痕且不中断整批（成功率取决于外部视觉模型，不作验收项） | 抽查产出：失败提示与图片链接并存 |
-| 3 | 图片 URL 匿名 GET 返回 200 | 浏览器无痕窗口打开抽查 |
-| 4 | 重跑同一文档（同配置），API 调用次数为 0 | `-v` 调试日志中无 HTTP 请求记录 |
-| 5 | 缺任一必填配置，启动报错且列出缺失项 | 删变量后运行 |
-| 6 | 换模型或换存储（端点/桶）后，全流程正常且缓存按新配置重新生成 | 改 .env 后跑通 |
-| 7 | DOC_ENGINE 两种取值下全流程正常，格式回退生效 | 用 .doc 与 .html 各验证一次 |
+| 3 | 图片文件裸命令产出完整转写（类型即契约）；文字类裸命令仅正文 | 各跑一次抽查 |
+| 4 | `--transcribe` 与 `--prompt transcribe` 产出一致（语法糖等价） | 同图各跑一次比对 |
+| 5 | 图片 URL 匿名 GET 返回 200 | 浏览器无痕窗口打开抽查 |
+| 6 | 重跑同一文档（同配置），API 调用次数为 0 | `-v` 调试日志中无 HTTP 请求记录 |
+| 7 | 缺任一必填凭据，首次用到时报错并列出缺失项（启动不要求配置齐全） | 删变量后运行 |
+| 8 | 换模型或换存储（端点/桶）后，全流程正常且缓存按新配置重新生成 | 改 .env 后跑通 |
+| 9 | DOC_ENGINE 两种取值下全流程正常，格式回退生效 | 用 .doc 与 .html 各验证一次 |
+| 10 | CACHE_DIR 相对值从任意子目录运行落点不变（锚定 .env 所在目录） | 子目录运行后核对启动日志的缓存路径 |
 
 ## 七、相关文档
 
-- 图片转写提示词正文与写法策略：代码 [prompts/](../omnimd/prompts)（ocr.py / alt.py）
+- 图片转写提示词正文与写法策略：代码 [prompts/](../omnimd/prompts)（transcribe.py / describe.py）
 - 技术架构与实现：[architecture.md](architecture.md)
 - 安装、配置与命令行速查：根 [README.md](../README.md)

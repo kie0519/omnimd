@@ -6,14 +6,14 @@ labels: ["bug"]
 
 **环境**
 
-- omnimd 版本：`pip show omnimd` 或 `omnimd` 包内 `__version__`
+- omnimd 版本（`omnimd --version` 或 `pip show omnimd`）：
 - Python 版本 / 操作系统：
 - 输入文件格式：
 
 **复现步骤**
 
+**报错信息原文**（如有，完整贴出）
+
 **期望行为与实际行为**
 
-**相关配置（脱敏后贴出，密钥一律不贴）**
-
-OUTPUT / DOC_ENGINE / VLM_THINKING 中与问题相关的项
+**相关配置**（脱敏后贴出与问题相关的项，密钥一律不贴；变量清单见 `.env.example`）

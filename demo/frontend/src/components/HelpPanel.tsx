@@ -13,7 +13,7 @@ interface Props {
 /**
  * 使用指南（只读）：怎么用 / 参数怎么配 / 限制与隐私。
  * 面板只解释配置在哪、有哪些配置项，不提供连接配置编辑；
- * 产出组成是上传时可选的运行参数，在上传区选择，不在此面板操作。
+ * 转换选项（呈现与任务）是上传时可选的运行参数，在上传区选择，不在此面板操作。
  */
 export default function HelpPanel({ open, onClose, formats }: Props) {
   const panelRef = useRef<HTMLElement>(null);
@@ -63,8 +63,8 @@ export default function HelpPanel({ open, onClose, formats }: Props) {
               </li>
             </ol>
             <p className={s.note}>
-              状态含义：<span className={s.badge}>排队中</span> 任务已受理，正在启动转换 ·{" "}
-              <span className={s.badge}>转换中</span> 解析正文、转写图片、产出 Markdown ·{" "}
+              状态含义：<span className={s.badge}>排队中</span> 已收到，正在启动转换 ·{" "}
+              <span className={s.badge}>转换中</span> 解析正文、处理图片、产出 Markdown ·{" "}
               <span className={s.badge}>已完成</span> 可查看与下载 ·{" "}
               <span className={s.badge}>失败</span> 查看错误原因
             </p>
@@ -76,7 +76,7 @@ export default function HelpPanel({ open, onClose, formats }: Props) {
               配置分两类：<b>连接配置</b>决定「用哪家的模型与存储」，
               只在服务端的 <code>.env</code> 中配置（<b>切换只改 .env，不改代码</b>
               ，改完重启服务，新配置才会用上），界面上不提供编辑；
-              <b>产出组成</b>是运行参数，在上传区按次选择。
+              <b>转换选项</b>就是上传区的「图片怎么处理」，每次上传时选。
             </p>
             <div className={s.tableWrap}>
               <table className={s.table}>
@@ -103,10 +103,8 @@ export default function HelpPanel({ open, onClose, formats }: Props) {
                   </tr>
                   <tr>
                     <td>文件存储</td>
-                    <td>
-                      <code>s3</code>
-                    </td>
-                    <td>给「链接」存放图片的地方（S3 兼容对象存储：MinIO / OBS / OSS / COS 等）</td>
+                    <td>任意 S3 兼容服务</td>
+                    <td>给「链接」存放图片的地方（MinIO / OBS / OSS / COS 等），填 <code>S3_ENDPOINT_URL</code> 等 <code>S3_*</code> 五项</td>
                   </tr>
                 </tbody>
               </table>
@@ -114,17 +112,19 @@ export default function HelpPanel({ open, onClose, formats }: Props) {
             <p className={s.note}>
               连接配置怎么填见 omnimd 仓库的{" "}
               <code>.env.example</code>（密钥只写在服务端{" "}
-              <code>.env</code> 里；只提取正文时不需要配置任何密钥，
-              选了转写或链接而密钥缺失时，转换会提示缺什么）。
+              <code>.env</code> 里；只转文档、不处理图片时不需要配置任何密钥，
+              选了转写、描述或链接而密钥缺失时，转换会提示缺什么）。
             </p>
             <p className={s.note}>
-              <b>产出组成</b>（上传时可选）：
+              <b>转换选项</b>（上传时可选）：
+              <b>图片保留</b>可选——不选（默认）不保留图片，产出只有文字；
               <code>链接</code> 给图片一个可点开的网址，随时查看原图；
-              <code>内嵌</code> 把图片直接放进 Markdown，单文件自带全部内容，离线也能看；
-              <code>转写</code> 用视觉模型把图片内容转成文字，可搜索、可引用；
-              <code>描述</code> 一句话说明图片是什么。
-              链接和内嵌二选一；要转写或描述，要先选链接或内嵌其中一个（这两项会调用视觉模型，产生模型费用）。
-              都不选就只提取正文——不调用模型、不用配置存储。
+              <code>内嵌</code> 把图片直接放进 Markdown，单文件自带全部内容，离线也能看。
+              <b>任务</b>——<code>转写</code> 用视觉模型把图片内容转成文字，可搜索、可引用；
+              <code>描述</code> 一句话说明图片是什么，作为图片的文字说明；
+              <code>自定义提示词</code> 想让模型重点看什么，填一句提示词（如「走查这个界面」「重点看配色」）。
+              转写可以单独开（不留图也能只要文字）；描述要先选链接或内嵌（转写、描述会调用视觉模型，产生模型费用）。
+              保持默认时：文档只提取正文，图片自动完整转写。
               选择会记住，下次上传自动沿用；每条历史记录按上传时的选择展示。
             </p>
           </section>

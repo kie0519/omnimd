@@ -46,7 +46,7 @@ export default function TaskItem({ task, selected, onSelect, onDelete }: Props) 
           task.image_count !== null && `${task.image_count} 图`,
           task.char_count !== null && `${formatNumber(task.char_count)} 字`,
           task.elapsed_ms !== null && formatElapsed(task.elapsed_ms),
-          task.cache_hit && "⚡ 之前转过，直接复用",
+          task.cache_hit && "⚡ 之前转过，直接用上次结果",
         ].filter(Boolean).join(" · ")
       : "失败 · 点击查看";
 

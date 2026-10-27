@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { TaskDetail, TaskSummary } from "./types";
+import type { TaskDetail, TaskSummary, UploadOptions } from "./types";
 import {
   checkHealth,
   deleteTask,
@@ -28,10 +28,20 @@ import s from "./App.module.css";
 
 type View = "rendered" | "source";
 
-/** 批量上传的队列元素：产出组成在入队时定格（用户当时的选择） */
+/** 批量上传的队列元素：转换选项在入队时定格（用户当时的选择） */
 interface QueuedFile {
   file: File;
-  output: string;
+  options: UploadOptions;
+}
+
+/** 提交选项 → 规范串（与后端 options 列同构，用于乐观插入列表项） */
+function optionsKey(options: UploadOptions): string {
+  return [
+    options.images ?? "drop",
+    ...(options.transcribe ? ["transcribe"] : []),
+    ...(options.describe ? ["describe"] : []),
+    ...(options.prompt.trim() ? ["prompt"] : []),
+  ].join("+");
 }
 
 
@@ -300,12 +310,12 @@ export default function App() {
 
   // 上传成功：立即置顶插入本地列表（不等列表回包），随后轮询校准
   const handleCreated = useCallback(
-    (taskId: string, filename: string, output: string) => {
+    (taskId: string, filename: string, options: string) => {
       const optimistic: TaskSummary = {
         task_id: taskId,
         filename,
         status: "pending",
-        output,
+        options,
         image_count: null,
         char_count: null,
         elapsed_ms: null,
@@ -339,9 +349,9 @@ export default function App() {
       slots -= 1;
       const item = uploadQueue.current.shift()!;
       inFlight.current += 1;
-      void uploadTask(item.file, item.output)
+      void uploadTask(item.file, item.options)
         .then(({ task_id, filename }) =>
-          handleCreated(task_id, filename, item.output)
+          handleCreated(task_id, filename, optionsKey(item.options))
         )
         .catch((e) => {
           // 网络故障与 429（并发已满）回队首，随下轮轮询重试；其余失败（后端拒格式/大小等）放弃该文件并告知用户，不允许文件悄悄消失
@@ -368,8 +378,8 @@ export default function App() {
 
   // 上传入口：校验通过的文件入队（连续多批追加同一队列），立即尝试占位提交
   const handleAccepted = useCallback(
-    (files: File[], output: string) => {
-      uploadQueue.current.push(...files.map((file) => ({ file, output })));
+    (files: File[], options: UploadOptions) => {
+      uploadQueue.current.push(...files.map((file) => ({ file, options })));
       flushQueue();
     },
     [flushQueue]

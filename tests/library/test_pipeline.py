@@ -1,15 +1,15 @@
-"""转换管线集成回归：产出组成 × 推导规则的矩阵（stub 上传/视觉模型，不联网）
+"""转换管线集成回归：呈现 × 任务的矩阵 + 类型路由缺省（stub 上传/视觉模型，不联网）
 
-锁定上传与传图编排的不变量：上传只发生在产出含 url 部件时；
-VLM 取图由产出组成推导（含 url 传 URL，否则传 data URI）；
-纯解析零上传零视觉调用，图片块移除。
+锁定上传与传图编排的不变量：上传只发生在 link 呈现时；
+VLM 取图由呈现值推导（link 传 URL，drop/embed 传 data URI）；
+图片文件裸命令注入完整转写（转写就是图片的解析）；文字类裸命令零调用零上传。
 """
-import tempfile
-
 import pytest
 from PIL import Image, ImageDraw
 
 from omnimd.converter import Converter
+from omnimd.prompts import build_registry
+from omnimd.vlm.base import CompletionResult, Usage
 from tests.helpers import make_config
 
 
@@ -25,18 +25,19 @@ class StubUploader:
 
 
 class StubVision:
-    """记录图片引用的假视觉模型（ocr 与 describe 都记录引用）"""
+    """记录图片引用与请求的假视觉模型：按 max_tokens 分流任务产物
+    （describe=512 一句话，其余=完整转写），usage 可供汇总断言"""
 
-    def __init__(self):
+    def __init__(self, usage=None):
         self.refs = []
+        self.requests = []
+        self.usage = usage
 
-    def ocr(self, ref):
+    def run(self, request, ref):
         self.refs.append(ref)
-        return "转写内容"
-
-    def describe(self, ref):
-        self.refs.append(ref)
-        return "一句话描述"
+        self.requests.append(request)
+        text = "一句话描述" if request.max_tokens == 512 else "转写内容"
+        return CompletionResult(text=text, usage=self.usage)
 
 
 @pytest.fixture()
@@ -49,156 +50,218 @@ def probe_png(tmp_path):
     return png
 
 
-def _convert_with_stubs(monkeypatch, tmp_path, png, output):
+def _convert_with_stubs(monkeypatch, tmp_path, path, **params):
     uploader, vision = StubUploader(), StubVision()
-    conv = Converter(make_config(cache_dir=tmp_path))
+    conv = Converter(make_config(cache_dir=tmp_path), build_registry())
     conv._uploader = uploader                  # 跳过真实存储客户端构造
     monkeypatch.setattr(type(conv), "vision", property(lambda self: vision))
-    result = conv.convert(png, output=output)
+    result = conv.convert(path, **params)
     return result, uploader, vision
 
 
-# (output, 期望上传数, 期望视觉调用数, 期望产出含公开链接, 期望含内嵌, 期望含转写文本)
+# (参数, 期望上传数, 期望视觉调用数, 期望产出含公开链接, 期望含内嵌, 期望含转写文本, 期望含描述文本)
+# 输入是图片文件（probe.png）：无任务动词时类型路由注入完整转写（呈现值不影响注入）
 MATRIX = [
-    ("body",              0, 0, False, False, False),  # 纯解析：零上传零调用
-    ("body,url",          1, 0, True,  False, False),
-    ("body,url,ocr",      1, 1, True,  False, True),
-    ("body,url,ocr,alt",  1, 2, True,  False, True),
-    ("body,url,alt",      1, 1, True,  False, False),
-    ("body,base64",       0, 0, False, True,  False),  # 内嵌：零上传
-    ("body,base64,ocr",   0, 1, False, True,  True),   # 传图走 data URI
-    ("body,base64,alt",   0, 1, False, True,  False),
+    ({},                                        0, 1, False, False, True,  False),  # 裸命令=完整转写
+    ({"images": "link"},                        1, 1, True,  False, True,  False),  # 呈现不阻断注入
+    ({"images": "link", "transcribe": True},    1, 1, True,  False, True,  False),
+    ({"images": "link", "describe": True},      1, 1, True,  False, False, True),
+    ({"images": "link", "transcribe": True,
+      "describe": True},                        1, 2, True,  False, True,  True),
+    ({"images": "embed"},                       0, 1, False, True,  True,  False),
+    ({"images": "embed", "transcribe": True},   0, 1, False, True,  True,  False),
+    ({"transcribe": True},                      0, 1, False, False, True,  False),  # 纯文本库：不留图只要文字
 ]
 
 
-@pytest.mark.parametrize("output,uploads,calls,link,embed,text", MATRIX)
-def test_output_transport_matrix(monkeypatch, tmp_path, probe_png,
-                                 output, uploads, calls, link, embed, text):
+@pytest.mark.parametrize("params,uploads,calls,link,embed,text,desc", MATRIX)
+def test_presentation_task_matrix(monkeypatch, tmp_path, probe_png,
+                                  params, uploads, calls, link, embed, text, desc):
     result, uploader, vision = _convert_with_stubs(
-        monkeypatch, tmp_path, probe_png, output)
+        monkeypatch, tmp_path, probe_png, **params)
     assert uploader.uploads == uploads
     assert len(vision.refs) == calls
     assert ("https://cdn.example/" in result.markdown) == link
-    assert ("data:image" in result.markdown) == embed  # base64 部件渲染内嵌
-    assert ("转写内容" in result.markdown) == text      # 转写部件真实渲染
-    if output == "body":
-        assert result.image_count == 0             # 纯解析图片块移除
-    else:
-        assert result.image_count == 1
-    # images 元数据随产出组成落值（公开契约：字段反映管线结果）
-    if output == "body":
-        assert result.images == []                 # 纯解析无图片处理
-    else:
+    assert ("data:image" in result.markdown) == embed
+    assert ("转写内容" in result.markdown) == text
+    assert ("一句话描述" in result.markdown) == desc
+    # 图片块计数：link / embed 呈现计 1；drop（含任务文本独立成段）计 0
+    has_presentation = params.get("images") is not None
+    assert result.image_count == (1 if has_presentation else 0)
+    # images 元数据：字段反映管线结果（texts 按任务名落值）
+    if has_presentation:
         (info,) = result.images
         assert info.sha256 and len(info.sha256) == 64
-        assert bool(info.url) == ("url" in parts_of(output))   # url 空串语义：未上传
-        assert info.ocr_text == ("转写内容" if "ocr" in parts_of(output) else "")
-        assert info.alt_text == ("一句话描述" if "alt" in parts_of(output) else "")
+        assert bool(info.url) == (params.get("images") == "link")
 
 
-def parts_of(output: str) -> set[str]:
-    return set(output.split(","))
+def test_bare_command_image_file_gets_full_transcription(
+        monkeypatch, tmp_path, probe_png):
+    """类型即契约的活样本：图片文件裸命令 → 完整转写（注入 transcribe），
+    产出是纯文本（无图片块）"""
+    result, uploader, vision = _convert_with_stubs(monkeypatch, tmp_path, probe_png)
+    assert len(vision.refs) == 1
+    assert vision.requests[0].system            # 生效 system（内置母本）非空
+    assert result.markdown.strip() == "转写内容"
+    assert result.image_count == 0
+    assert uploader.uploads == 0
 
 
-def test_url_only_skips_vlm_construction(monkeypatch, tmp_path, probe_png):
-    """产出不含 ocr/alt 时不构造视觉模型（openai SDK 不加载）"""
+def test_text_file_bare_command_never_injects(monkeypatch, tmp_path):
+    """文字类裸命令绝不注入：零上传零视觉调用，产出即正文"""
+    txt = tmp_path / "note.txt"
+    txt.write_text("纯正文内容", encoding="utf-8")
+    result, uploader, vision = _convert_with_stubs(monkeypatch, tmp_path, txt)
+    assert "纯正文内容" in result.markdown
+    assert uploader.uploads == 0 and len(vision.refs) == 0
+    assert result.image_count == 0
+
+
+def test_text_file_with_link_never_constructs_vision(monkeypatch, tmp_path):
+    """文字文件 + link 呈现且无任务动词：不构造视觉模型（openai SDK 不加载）。
+    图片文件不存在此组合——类型路由会注入转写"""
     def fail(self):
-        raise AssertionError("不含转写/描述的产出不应构造视觉模型")
-    conv = Converter(make_config(cache_dir=tmp_path))
+        raise AssertionError("无图片任务的转换不应构造视觉模型")
+    txt = tmp_path / "note.txt"
+    txt.write_text("内容", encoding="utf-8")
+    conv = Converter(make_config(cache_dir=tmp_path), build_registry())
     conv._uploader = StubUploader()
     monkeypatch.setattr(type(conv), "vision", property(fail))
-    result = conv.convert(probe_png, output="body,url")
-    assert result.image_count == 1
+    result = conv.convert(txt, images="link")
+    assert result.image_count == 0
+
+
+def test_same_task_cache_shared_across_presentations(monkeypatch, tmp_path, probe_png):
+    """取图方式不进缓存键（行为级）：同图同任务，embed 与 link 两次转换只调一次模型"""
+    calls = []
+
+    class CountVision:
+        def run(self, request, ref):
+            calls.append(ref)
+            return CompletionResult(text="转写内容", usage=None)
+
+    conv = Converter(make_config(cache_dir=tmp_path), build_registry())
+    conv._uploader = StubUploader()
+    monkeypatch.setattr(type(conv), "vision", property(lambda self: CountVision()))
+    conv.convert(probe_png, images="embed", transcribe=True)
+    conv.convert(probe_png, images="link", transcribe=True)
+    assert len(calls) == 1          # 第二次（URL 传图）命中第一次（base64 传图）的缓存
 
 
 def test_upload_failure_skips_vlm_call(monkeypatch, tmp_path, probe_png):
-    """管线不变量：URL 传图时上传失败的图跳过 VLM 调用（无可用 ref），
+    """管线不变量：URL 传图时上传失败的图跳过视觉调用（无可用 ref），
     该图走失败渲染（整图块删除），其余行为不受影响"""
     class FailUploader:
         def upload_image(self, data, filename):
             raise RuntimeError("upload exploded")
 
     vision = StubVision()
-    conv = Converter(make_config(cache_dir=tmp_path))
+    conv = Converter(make_config(cache_dir=tmp_path), build_registry())
     conv._uploader = FailUploader()
     monkeypatch.setattr(type(conv), "vision", property(lambda self: vision))
-    result = conv.convert(probe_png, output="body,url,ocr")
+    result = conv.convert(probe_png, images="link", transcribe=True)
     assert len(vision.refs) == 0                   # 上传失败 → 零视觉调用
     assert result.image_count == 0                 # 整图块删除
+    assert "（图片转写失败）" not in result.markdown  # drop 后无载体，任务产物随图丢弃
     assert result.markdown.strip() == ""           # 单图文件的产出为空正文
 
 
 def test_pure_parse_zero_credentials_end_to_end(tmp_path):
-    """纯解析零凭据端到端：无任何 VLM/存储配置（空串凭据）构造成功并完成转换"""
+    """文字类裸命令零凭据端到端：无任何 VLM/存储配置（空串凭据）构造成功并完成转换"""
     from omnimd.config import Config
     txt = tmp_path / "note.txt"
     txt.write_text("纯正文内容", encoding="utf-8")
     config = Config(
         vlm_api_key="", vlm_base_url="", vlm_model="",
-        storage_provider="", s3_endpoint_url="", s3_region="",
+        s3_endpoint_url="", s3_region="",
         s3_bucket="", s3_access_key_id="", s3_secret_access_key="",
         s3_key_prefix="", cache_dir=tmp_path,
     )
     config.validate()                 # 纯解析：构造期校验通过（凭据惰性）
-    result = Converter(config).convert(txt, output="body")
+    result = Converter(config, build_registry()).convert(txt)
     assert "纯正文内容" in result.markdown
     assert result.image_count == 0
 
 
-def test_pure_parse_neither_uploader_nor_vlm(monkeypatch, tmp_path, probe_png):
-    """纯解析：存储与视觉模型都不构造（零外部依赖）"""
-    def fail_vision(self):
-        raise AssertionError("纯解析不应构造视觉模型")
-    conv = Converter(make_config(cache_dir=tmp_path))
-    conv._uploader = None
-    monkeypatch.setattr(type(conv), "vision", property(fail_vision))
-    result = conv.convert(probe_png, output="body")
-    assert result.image_count == 0
-    assert "PROBE" not in result.markdown or result.markdown  # 正文仍在
-
-
-def test_base64_vlm_ref_is_data_uri(monkeypatch, tmp_path, probe_png):
-    """不含 url 部件：视觉模型收到 data URI（推导），产出渲染内嵌"""
+def test_embed_vlm_ref_is_data_uri(monkeypatch, tmp_path, probe_png):
+    """非 link 呈现：视觉模型收到 data URI（推导），产出渲染内嵌或独立文本"""
     result, uploader, vision = _convert_with_stubs(
-        monkeypatch, tmp_path, probe_png, "body,base64,ocr")
+        monkeypatch, tmp_path, probe_png, images="embed", transcribe=True)
     assert vision.refs[0].startswith("data:image/png;base64,")
     assert uploader.uploads == 0
     assert result.markdown.count("data:image/png;base64,") >= 1
 
 
-def test_url_part_vlm_ref_is_public_url(monkeypatch, tmp_path, probe_png):
-    """含 url 部件：视觉模型收到公开 URL（推导），产出渲染公开链接"""
+def test_link_vlm_ref_is_public_url(monkeypatch, tmp_path, probe_png):
+    """link 呈现：视觉模型收到公开 URL（推导），产出渲染公开链接"""
     result, uploader, vision = _convert_with_stubs(
-        monkeypatch, tmp_path, probe_png, "body,url,ocr")
+        monkeypatch, tmp_path, probe_png, images="link", transcribe=True)
     assert vision.refs[0].startswith("https://cdn.example/")
     assert "data:image" not in result.markdown
 
 
+def test_usage_accumulates_into_result(monkeypatch, tmp_path, probe_png):
+    """token 用量透传：任务返回 usage → ConversionResult 汇总（成本可见）"""
+    usage = Usage(prompt_tokens=100, completion_tokens=50, total_tokens=150)
+    uploader, vision = StubUploader(), StubVision(usage=usage)
+    conv = Converter(make_config(cache_dir=tmp_path), build_registry())
+    conv._uploader = uploader
+    monkeypatch.setattr(type(conv), "vision", property(lambda self: vision))
+    result = conv.convert(probe_png, transcribe=True)
+    assert result.usage is not None
+    assert result.usage.total_tokens == 150
+    assert result.usage.prompt_tokens == 100
+    assert result.usage.completion_tokens == 50
+
+
+def test_usage_is_per_conversion_not_cumulative(monkeypatch, tmp_path, probe_png):
+    """usage 是本次转换的增量，不随实例累计漂移——同一实例第二次转换
+    仍是自己的 150，不是 300（共享实例的服务方依赖此语义）"""
+    usage = Usage(prompt_tokens=100, completion_tokens=50, total_tokens=150)
+    conv = Converter(make_config(cache_dir=tmp_path), build_registry())
+    conv._uploader = StubUploader()
+    monkeypatch.setattr(type(conv), "vision", property(lambda self: StubVision(usage=usage)))
+    first = conv.convert(probe_png, transcribe=True)
+    second = conv.convert(probe_png, transcribe=True)   # 缓存命中路径 usage 为增量 0
+    assert first.usage is not None and first.usage.total_tokens == 150
+    # 第二次命中缓存（零调用）→ 本次增量为 0 → usage 为 None（而非累计 300）
+    assert second.usage is None
+
+
+def test_no_usage_yields_none(monkeypatch, tmp_path, tmp_path_factory, probe_png):
+    """端点未返回用量（或无调用）：ConversionResult.usage 为 None"""
+    uploader, vision = StubUploader(), StubVision(usage=None)
+    conv = Converter(make_config(cache_dir=tmp_path), build_registry())
+    conv._uploader = uploader
+    monkeypatch.setattr(type(conv), "vision", property(lambda self: vision))
+    result = conv.convert(probe_png, transcribe=True)
+    assert result.usage is None
+
+
 def test_empty_result_not_cached_allows_retry(monkeypatch, tmp_path, probe_png):
-    """空转写/空描述：空串即失败产物，不缓存以免固化失败；
+    """空产物：空串即失败产物，不缓存以免固化失败；
     非空结果正常缓存，重跑不再调用"""
     class EmptyVision:
         def __init__(self):
             self.calls = 0
 
-        def ocr(self, ref):
+        def run(self, request, ref):
             self.calls += 1
-            return ""
-
-        def describe(self, ref):
-            self.calls += 1
-            return ""
+            return CompletionResult(text="", usage=None)
 
     def run_with(vision):
-        conv = Converter(make_config(cache_dir=tmp_path))
+        conv = Converter(make_config(cache_dir=tmp_path), build_registry())
         conv._uploader = StubUploader()
         monkeypatch.setattr(type(conv), "vision", property(lambda self: vision))
-        return conv.convert(probe_png, output="body,url,ocr,alt")
+        return conv.convert(probe_png, images="link",
+                            transcribe=True, describe=True)
 
     empty = EmptyVision()
-    run_with(empty)
+    first = run_with(empty)
     run_with(empty)
     assert empty.calls == 4          # 空结果两次都真实调用：失败未被固化
+    assert "（图片转写失败）" in first.markdown   # 转写失败占位真实落进产出
+    assert "![图片]" in first.markdown            # describe 失败回落「图片」二字
 
     normal = StubVision()
     run_with(normal)
@@ -219,7 +282,7 @@ def test_uploader_missing_env_lists_all_required():
     import pytest as _pytest
     from omnimd.exceptions import ConfigError
     from omnimd.storage import create_uploader
-    cfg = make_config(storage_provider="s3", s3_endpoint_url="",
+    cfg = make_config(s3_endpoint_url="",
                       s3_region="", s3_bucket="", s3_access_key_id="",
                       s3_secret_access_key="")
     with _pytest.raises(ConfigError) as e:
